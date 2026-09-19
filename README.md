@@ -1,36 +1,112 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# TestLoom
 
-## Getting Started
+**No-code / low-code web test automation & recording platform.**
 
-First, run the development server:
+TestLoom lets QA engineers, developers, and product managers record real browser interactions on a live web application, attach visual assertion checkpoints, replay tests automatically, and export the result as executable code — no manual scripting required.
+
+Think of it as: **record like a human → replay like a robot → export like a developer.**
+
+Built as a modern, cloud-native alternative to tools like Bugbug.io, Cypress Studio, and Playwright Codegen.
+
+---
+
+## ✨ Key Features
+
+- **Zero-code recording** — click through your app like a normal user; TestLoom records every action as a reusable test step.
+- **Smart replay strategies** — auto-detects input types and picks safe defaults: exact values for checkboxes/radios/dropdowns (business logic), auto-generated unique values for text/email fields (avoids duplicate-key errors on rerun).
+- **Self-healing selectors** — every element is fingerprinted with multiple locator signals (test ID, ARIA label, CSS path, XPath, and more). If the UI changes, tests automatically fall back through a priority list instead of breaking.
+- **Scenarios & Workflows** — chain individual recorded tests into full end-to-end user journeys, running in a single shared browser session (log in once, stay authenticated through the whole flow).
+- **Multi-framework export** — turn any scenario into real code: Playwright (TypeScript), Cypress (JS), Selenium (Python), or Cucumber (Gherkin).
+- **Team-ready from day one** — simple 3-role access model (Admin / QA Engineer / Viewer) across personal or company-owned projects.
+- **Built-in integrations** — GitHub webhooks, Slack alerts, and email reports per project.
+
+---
+
+## 🧱 Tech Stack
+
+| Layer              | Choice                                                                                                |
+| :----------------- | :---------------------------------------------------------------------------------------------------- |
+| Framework          | [Next.js](https://nextjs.org) 16 (App Router)                                                         |
+| UI                 | [React](https://react.dev) 19, [@base-ui/react](https://base-ui.com), [shadcn](https://ui.shadcn.com) |
+| Styling            | [Tailwind CSS](https://tailwindcss.com) 4                                                             |
+| Forms & Validation | [react-hook-form](https://react-hook-form.com), [zod](https://zod.dev)                                |
+| Automation Engine  | [Playwright](https://playwright.dev)                                                                  |
+| Language           | TypeScript                                                                                            |
+
+---
+
+## 🧩 Core Concept
+
+TestLoom organizes test assets into **Scenarios** and **Workflows**:
+
+- A **Scenario** is one recorded test for a specific page or action — e.g. `Login`, `Dashboard View`, `Company Create`.
+- A **Workflow** chains multiple scenarios into a complete journey — e.g. `Login` ➔ `Dashboard View` ➔ `Company Create` ➔ `Company View`, all running in one continuous browser session so authentication persists across the whole chain.
+
+---
+
+## 👥 Roles
+
+| Capability                        | Admin | QA Engineer | Viewer |
+| :-------------------------------- | :---: | :---------: | :----: |
+| Manage team & projects            |  ✅   |     ❌      |   ❌   |
+| Record & edit scenarios/workflows |  ✅   |     ✅      |   ❌   |
+| Run tests & view results          |  ✅   |     ✅      |   ✅   |
+| Export automation code            |  ✅   |     ✅      |   ✅   |
+
+Projects can be **personal** (owned by an individual) or **company-owned** (shared across a team via invite).
+
+---
+
+## 🚀 Getting Started
 
 ```bash
+# Install dependencies
+npm install
+
+# Run the development server
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+
+# Build for production
+npm run build
+npm run start
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open [http://localhost:3000](http://localhost:3000) to view the app.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+---
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## 📖 Documentation
 
-## Learn More
+| Document                               | Purpose                                                                                     |
+| :------------------------------------- | :------------------------------------------------------------------------------------------ |
+| [`Architecture.md`](./Architecture.md) | System architecture — roles, flows, execution engine, self-healing pipeline, repo structure |
+| [`dbschema.md`](./dbschema.md)         | Full database schema — every table, field, and sample JSON payload                          |
+| `AGENTS.md`                            | Repository coding rules and conventions                                                     |
 
-To learn more about Next.js, take a look at the following resources:
+---
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## 📁 Repository Structure
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```
+app/
+  (auth)/                                → Sign up, log in, invite acceptance
+  (dashboard)/                           → Projects dashboard, team management
+  (dashboard)/projects/[id]/workspace/   → Studio canvas & recorder
+  api/                                   → Thin API controllers → delegate to lib/ services
 
-## Deploy on Vercel
+components/
+  ui/          → Base primitives (Shadcn / Base-UI) — do not edit directly
+  shared/      → Global reusable components
+  pages/       → Page-exclusive components
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+lib/
+  <service>/
+    types.ts
+    <service>.service.ts
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+---
+
+## License
+
+Proprietary — internal project.
