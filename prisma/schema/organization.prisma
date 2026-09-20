@@ -1,0 +1,75 @@
+// TestLoom Organization & Multi-Tenancy Models
+
+model Organization {
+  id      String  @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name    String
+  slug    String  @unique
+  logoUrl String?
+  plan    String  @default("FREE")
+
+  // Mandatory Audit & Soft-Delete Fields
+  createdAt DateTime  @default(now()) @db.Timestamptz
+  createdBy String?   @db.Uuid
+  updatedAt DateTime  @default(now()) @updatedAt @db.Timestamptz
+  updatedBy String?   @db.Uuid
+  deletedAt DateTime? @db.Timestamptz
+  deletedBy String?   @db.Uuid
+
+  // Domain Relations
+  members  OrganizationMember[]
+  invites  OrgInvite[]
+  projects Project[]
+
+  @@map("organizations")
+}
+
+model OrganizationMember {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String   @db.Uuid
+  userId         String   @db.Uuid
+  role           UserRole @default(VIEWER)
+  joinedAt       DateTime @default(now()) @db.Timestamptz
+
+  // Mandatory Audit & Soft-Delete Fields
+  createdAt DateTime  @default(now()) @db.Timestamptz
+  createdBy String?   @db.Uuid
+  updatedAt DateTime  @default(now()) @updatedAt @db.Timestamptz
+  updatedBy String?   @db.Uuid
+  deletedAt DateTime? @db.Timestamptz
+  deletedBy String?   @db.Uuid
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([organizationId, userId])
+  @@index([userId])
+  @@map("organization_members")
+}
+
+model OrgInvite {
+  id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId String    @db.Uuid
+  email          String
+  role           UserRole  @default(VIEWER)
+  token          String    @unique
+  invitedById    String?   @db.Uuid
+  expiresAt      DateTime  @db.Timestamptz
+  acceptedAt     DateTime? @db.Timestamptz
+
+  // Mandatory Audit & Soft-Delete Fields
+  createdAt DateTime  @default(now()) @db.Timestamptz
+  createdBy String?   @db.Uuid
+  updatedAt DateTime  @default(now()) @updatedAt @db.Timestamptz
+  updatedBy String?   @db.Uuid
+  deletedAt DateTime? @db.Timestamptz
+  deletedBy String?   @db.Uuid
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  invitedBy    User?        @relation("InvitedByUser", fields: [invitedById], references: [id], onDelete: SetNull)
+
+  @@index([organizationId])
+  @@index([email])
+  @@map("org_invites")
+}

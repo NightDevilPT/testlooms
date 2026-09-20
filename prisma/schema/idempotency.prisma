@@ -1,0 +1,29 @@
+// TestLoom Idempotency Key Tracking Model
+
+model IdempotencyRecord {
+  id                 String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId             String?   @db.Uuid
+  idempotencyKey     String    @unique
+  requestPath        String
+  requestParamsHash  String?
+  responseStatusCode Int?
+  responseBody       Json?
+  lockedAt           DateTime  @default(now()) @db.Timestamptz
+  completedAt        DateTime? @db.Timestamptz
+  expiresAt          DateTime  @db.Timestamptz
+
+  // Mandatory Audit & Soft-Delete Fields
+  createdAt DateTime  @default(now()) @db.Timestamptz
+  createdBy String?   @db.Uuid
+  updatedAt DateTime  @default(now()) @updatedAt @db.Timestamptz
+  updatedBy String?   @db.Uuid
+  deletedAt DateTime? @db.Timestamptz
+  deletedBy String?   @db.Uuid
+
+  // Domain Relations
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([idempotencyKey])
+  @@index([expiresAt])
+  @@map("idempotency_records")
+}

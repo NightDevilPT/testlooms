@@ -1,0 +1,71 @@
+// TestLoom Execution Engine & Results Models
+
+model TestExecution {
+  id                   String          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId            String          @db.Uuid
+  scenarioId           String?         @db.Uuid
+  workflowId           String?         @db.Uuid
+  environmentProfileId String?         @db.Uuid
+  status               ExecutionStatus @default(PENDING)
+  triggerType          TriggerType     @default(MANUAL)
+  startedAt            DateTime?       @db.Timestamptz
+  completedAt          DateTime?       @db.Timestamptz
+  durationMs           Int?
+  totalSteps           Int             @default(0)
+  passedSteps          Int             @default(0)
+  failedSteps          Int             @default(0)
+  healedSteps          Int             @default(0)
+  errorMessage         String?
+  videoUrl             String?
+
+  // Mandatory Audit & Soft-Delete Fields
+  createdAt DateTime  @default(now()) @db.Timestamptz
+  createdBy String?   @db.Uuid
+  updatedAt DateTime  @default(now()) @updatedAt @db.Timestamptz
+  updatedBy String?   @db.Uuid
+  deletedAt DateTime? @db.Timestamptz
+  deletedBy String?   @db.Uuid
+
+  // Domain Relations
+  project            Project              @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  scenario           TestScenario?        @relation(fields: [scenarioId], references: [id], onDelete: SetNull)
+  workflow           TestWorkflow?        @relation(fields: [workflowId], references: [id], onDelete: SetNull)
+  environmentProfile EnvironmentProfile?  @relation(fields: [environmentProfileId], references: [id], onDelete: SetNull)
+  stepResults        ExecutionStepResult[]
+
+  @@index([projectId])
+  @@index([scenarioId])
+  @@index([workflowId])
+  @@map("test_executions")
+}
+
+model ExecutionStepResult {
+  id             String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  executionId    String           @db.Uuid
+  stepId         String?          @db.Uuid
+  stepOrder      Int
+  actionType     ActionType
+  status         StepResultStatus @default(PASSED)
+  durationMs     Int?
+  healedSelector String?
+  healedPriority String?
+  failureReason  String?
+  screenshotUrl  String?
+  executedAt     DateTime         @default(now()) @db.Timestamptz
+
+  // Mandatory Audit & Soft-Delete Fields
+  createdAt DateTime  @default(now()) @db.Timestamptz
+  createdBy String?   @db.Uuid
+  updatedAt DateTime  @default(now()) @updatedAt @db.Timestamptz
+  updatedBy String?   @db.Uuid
+  deletedAt DateTime? @db.Timestamptz
+  deletedBy String?   @db.Uuid
+
+  // Domain Relations
+  execution TestExecution @relation(fields: [executionId], references: [id], onDelete: Cascade)
+  step      TestStep?     @relation(fields: [stepId], references: [id], onDelete: SetNull)
+
+  @@index([executionId])
+  @@index([stepId])
+  @@map("execution_step_results")
+}

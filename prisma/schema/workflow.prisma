@@ -1,0 +1,49 @@
+// TestLoom Workflow Suite Models
+
+model TestWorkflow {
+  id          String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  projectId   String         @db.Uuid
+  title       String
+  description String?
+  status      ScenarioStatus @default(READY)
+
+  // Mandatory Audit & Soft-Delete Fields
+  createdAt DateTime  @default(now()) @db.Timestamptz
+  createdBy String?   @db.Uuid
+  updatedAt DateTime  @default(now()) @updatedAt @db.Timestamptz
+  updatedBy String?   @db.Uuid
+  deletedAt DateTime? @db.Timestamptz
+  deletedBy String?   @db.Uuid
+
+  // Domain Relations
+  project           Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  workflowScenarios WorkflowScenario[]
+  executions        TestExecution[]
+
+  @@index([projectId])
+  @@map("test_workflows")
+}
+
+model WorkflowScenario {
+  id         String @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  workflowId String @db.Uuid
+  scenarioId String @db.Uuid
+  stepOrder  Int
+
+  // Mandatory Audit & Soft-Delete Fields
+  createdAt DateTime  @default(now()) @db.Timestamptz
+  createdBy String?   @db.Uuid
+  updatedAt DateTime  @default(now()) @updatedAt @db.Timestamptz
+  updatedBy String?   @db.Uuid
+  deletedAt DateTime? @db.Timestamptz
+  deletedBy String?   @db.Uuid
+
+  // Domain Relations
+  workflow TestWorkflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  scenario TestScenario @relation(fields: [scenarioId], references: [id], onDelete: Cascade)
+
+  @@unique([workflowId, stepOrder])
+  @@index([workflowId])
+  @@index([scenarioId])
+  @@map("workflow_scenarios")
+}

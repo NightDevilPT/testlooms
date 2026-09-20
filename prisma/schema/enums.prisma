@@ -1,0 +1,73 @@
+// TestLoom Domain Enums
+
+enum UserRole {
+  ADMIN
+  QA_ENGINEER
+  VIEWER
+}
+
+enum OwnershipType {
+  PERSONAL
+  COMPANY
+}
+
+enum ScenarioStatus {
+  DRAFT
+  READY
+  DEPRECATED
+}
+
+enum InputStrategy {
+  DETERMINISTIC_EXACT
+  ENVIRONMENT_VARIABLE
+  RANDOM_OPTION
+  DYNAMIC_AUTO_GENERATE
+}
+
+enum AssertionType {
+  ASSERT_VISIBLE
+  ASSERT_TEXT
+  ASSERT_URL
+}
+
+enum ExecutionStatus {
+  PENDING
+  RUNNING
+  PASSED
+  FAILED
+  CANCELLED
+}
+
+enum StepResultStatus {
+  PASSED
+  FAILED
+  HEALED
+  SKIPPED
+}
+
+enum ActionType {
+  CLICK
+  TYPE
+  SELECT
+  CHECK
+  UNCHECK
+  HOVER
+  SCROLL
+  KEYPRESS
+  UPLOAD_FILE
+  ASSERT
+}
+
+enum IntegrationProvider {
+  GITHUB
+  SLACK
+  EMAIL
+  WEBHOOK
+}
+
+enum TriggerType {
+  MANUAL
+  SCHEDULED
+  CI_CD
+  WEBHOOK
+}
