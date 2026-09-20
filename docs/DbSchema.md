@@ -50,6 +50,8 @@ erDiagram
 
     TEST_EXECUTIONS ||--o{ TEST_EXECUTION_STEP_RESULTS : "logs step results & screenshots"
     TEST_SCENARIOS ||--o{ EXPORTED_SCRIPTS : "exports automation code"
+
+    USERS ||--o{ IDEMPOTENCY_KEYS : "deduplicates retried requests"
 ```
 
 ---
@@ -612,6 +614,102 @@ History of every code export generated from a scenario.
 
 ---
 
+## Layer 7 — Idempotency & Request Deduplication
+
+### Table: `idempotency_keys`
+
+Backs the idempotency enforcement described in `API.md` §3 and `AGENTS.md` §3.7 — prevents a retried or double-submitted request (e.g. a network timeout retry, a double-click on "Run", or a provider retrying a webhook delivery) from executing a state-mutating action twice. This table does **not** follow the standard `createdBy`/`updatedBy`/`deletedBy` audit convention from §1 — it's a short-lived deduplication record, not a domain entity, so it only carries `id` and `createdAt`.
+
+| Column               | Type           | Constraints                                          | What it's for                                                                                                                                                                                                                                                                                         |
+| :------------------- | :------------- | :--------------------------------------------------- | :---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `key`                | `VARCHAR(255)` | `NOT NULL`                                           | The client-supplied `Idempotency-Key` header value for a user-initiated request, **or** the provider's delivery/event ID (e.g. GitHub's `X-GitHub-Delivery`) for an inbound webhook.                                                                                                                  |
+| `source`             | `VARCHAR(20)`  | `NOT NULL`, `DEFAULT 'USER_REQUEST'`                 | `USER_REQUEST` or `WEBHOOK` — distinguishes the two dedup flows sharing this one table.                                                                                                                                                                                                               |
+| `userId`             | `UUID`         | `NULLABLE`, `REFERENCES users(id) ON DELETE CASCADE` | Scopes the key to the requesting user for `USER_REQUEST` rows. **`NULL` for `WEBHOOK` rows**, since inbound webhooks are unauthenticated and have no associated user.                                                                                                                                 |
+| `endpoint`           | `VARCHAR(255)` | `NOT NULL`                                           | The **fully resolved** request path, e.g. `POST /api/scenarios/sc100000.../execute` — never a route _pattern_ like `/scenarios/:id/execute`. Storing the pattern instead of the resolved path would let a reused key across two different resources incorrectly collide or replay the wrong response. |
+| `requestHash`        | `VARCHAR(64)`  | `NOT NULL`                                           | SHA-256 hash of the request body. If the same key is reused with a **different** body, the request is rejected (`409 Conflict`) rather than silently replayed.                                                                                                                                        |
+| `status`             | `VARCHAR(20)`  | `NOT NULL`, `DEFAULT 'IN_PROGRESS'`                  | `IN_PROGRESS` while the original request is still executing, `COMPLETED` once it finishes. Handles the case where a retry arrives before the first request has finished.                                                                                                                              |
+| `responseStatusCode` | `INTEGER`      | `NULLABLE`                                           | The HTTP status code returned by the original request, cached so a retry gets the identical response.                                                                                                                                                                                                 |
+| `responseBody`       | `JSONB`        | `NULLABLE`                                           | The full response body from the original request, replayed verbatim to a duplicate request instead of re-running the action.                                                                                                                                                                          |
+| `expiresAt`          | `TIMESTAMPTZ`  | `NOT NULL`                                           | When this key stops being honored (typically 24h after creation) — prevents unbounded table growth.                                                                                                                                                                                                   |
+
+**Unique constraint:** `(key, userId, endpoint)` — this is what makes the deduplication check atomic and race-condition-safe at the database level, not just at the application level. Postgres treats `NULL` values in a unique index as distinct from one another, so multiple `WEBHOOK` rows (all with `userId: NULL`) still dedupe correctly against each other via their `key` + `endpoint`, without colliding with unrelated webhook deliveries.
+
+**Sample JSON — a user-initiated request, while still executing:**
+
+```json
+{
+	"id": "idk170000-e89b-12d3-a456-426614174016",
+	"key": "6f9619ff-8b86-d011-b42d-00c04fc964ff",
+	"source": "USER_REQUEST",
+	"userId": "u1111111-e89b-12d3-a456-426614174000",
+	"endpoint": "POST /api/workflows/wf120000-e89b-12d3-a456-426614174011/execute",
+	"requestHash": "8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92",
+	"status": "IN_PROGRESS",
+	"responseStatusCode": null,
+	"responseBody": null,
+	"expiresAt": "2026-09-20T11:20:00.000Z",
+	"createdAt": "2026-09-19T11:20:00.000Z"
+}
+```
+
+**Sample JSON — the same request after completion (a retry now gets this cached response):**
+
+```json
+{
+	"id": "idk170000-e89b-12d3-a456-426614174016",
+	"key": "6f9619ff-8b86-d011-b42d-00c04fc964ff",
+	"source": "USER_REQUEST",
+	"userId": "u1111111-e89b-12d3-a456-426614174000",
+	"endpoint": "POST /api/workflows/wf120000-e89b-12d3-a456-426614174011/execute",
+	"requestHash": "8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92",
+	"status": "COMPLETED",
+	"responseStatusCode": 200,
+	"responseBody": {
+		"success": true,
+		"statusCode": 200,
+		"data": { "executionId": "ex140000-e89b-12d3-a456-426614174013" },
+		"pagination": null,
+		"meta": {
+			"responseTimeMs": 42,
+			"startedAt": "2026-09-19T11:20:00.000Z",
+			"endedAt": "2026-09-19T11:20:00.042Z"
+		}
+	},
+	"expiresAt": "2026-09-20T11:20:00.000Z",
+	"createdAt": "2026-09-19T11:20:00.000Z"
+}
+```
+
+**Sample JSON — a webhook delivery, deduped by the provider's own delivery ID (no `userId`):**
+
+```json
+{
+	"id": "idk180000-e89b-12d3-a456-426614174017",
+	"key": "72d3162e-cc78-11e3-981f-0800200c9a66",
+	"source": "WEBHOOK",
+	"userId": null,
+	"endpoint": "POST /api/webhooks/github",
+	"requestHash": "3b3f5c9d1e8a0f2b6c4d7e9a1f3b5c7d9e0a2b4c6d8e0f1a3b5c7d9e1f3a5b7c",
+	"status": "COMPLETED",
+	"responseStatusCode": 200,
+	"responseBody": {
+		"success": true,
+		"statusCode": 200,
+		"data": { "acknowledged": true },
+		"pagination": null,
+		"meta": {
+			"responseTimeMs": 18,
+			"startedAt": "2026-09-19T12:05:00.000Z",
+			"endedAt": "2026-09-19T12:05:00.018Z"
+		}
+	},
+	"expiresAt": "2026-09-20T12:05:00.000Z",
+	"createdAt": "2026-09-19T12:05:00.000Z"
+}
+```
+
+---
+
 ## 3. Indexes for High-Performance Queries
 
 ```sql
@@ -633,4 +731,8 @@ CREATE INDEX idx_workflow_scenarios_order ON workflow_scenarios(workflowId, exec
 CREATE INDEX idx_executions_scenario ON test_executions(scenarioId, startedAt DESC) WHERE deletedAt IS NULL;
 CREATE INDEX idx_executions_project ON test_executions(projectId, startedAt DESC) WHERE deletedAt IS NULL;
 CREATE INDEX idx_step_results_execution ON test_execution_step_results(executionId) WHERE deletedAt IS NULL;
+
+-- Idempotency Lookups
+CREATE UNIQUE INDEX idx_idempotency_key_user_endpoint ON idempotency_keys(key, userId, endpoint);
+CREATE INDEX idx_idempotency_expires ON idempotency_keys(expiresAt);
 ```

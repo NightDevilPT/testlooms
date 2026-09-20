@@ -15,7 +15,11 @@ This document is the single source of truth for how code is written, organized, 
 **Related documentation:**
 
 - [`docs/overview.md`](./docs/overview.md) — product overview & README-level summary
+- [`docs/PRD.md`](./docs/PRD.md) — product requirement document, roles, functional scope
 - [`docs/Architecture.md`](./docs/Architecture.md) — system architecture, domain flows, execution engine behavior
+- [`docs/Design.md`](./docs/Design.md) — design system specification, semantic tokens, component composition rules
+- [`docs/Rule.md`](./docs/Rule.md) — strict development rules, thin API controllers, 2-file service pattern
+- [`docs/Memory.md`](./docs/Memory.md) — living AI session memory, completed milestones & state tracker
 - [`docs/DbSchema.md`](./docs/DbSchema.md) — full database schema, field reference, sample payloads
 
 ---
@@ -96,6 +100,8 @@ testloom/
 | `scroll-area.tsx`   | `ScrollArea`, `ScrollBar`                                                                                   |
 | `select.tsx`        | `Select`, `SelectTrigger`, `SelectValue`, `SelectContent`, `SelectItem`                                     |
 | `separator.tsx`     | `Separator`                                                                                                 |
+| `sheet.tsx`         | `Sheet`, `SheetTrigger`, `SheetContent`, `SheetHeader`, `SheetFooter`, etc.                                 |
+| `sidebar.tsx`       | `Sidebar`, `SidebarProvider`, `SidebarHeader`, `SidebarContent`, `SidebarFooter`, etc.                       |
 | `skeleton.tsx`      | `Skeleton`                                                                                                  |
 | `textarea.tsx`      | `Textarea`                                                                                                  |
 | `toast.tsx`         | `Toast`, `ToastProvider`, `ToastViewport`, etc.                                                             |
@@ -159,6 +165,7 @@ lib/<service-name>/
 
 | Service                      | Responsibility                                                                                                   |
 | :--------------------------- | :--------------------------------------------------------------------------------------------------------------- |
+| `lib/response-service/`       | Standard API response envelope formatting (`ok`, `paginated`, `fail`), status codes & timing metadata |
 | `lib/auth-service/`          | Sign up, login, refresh token issuance/rotation, invite token validation                                         |
 | `lib/organizations-service/` | Organization creation, membership, role assignment/invites                                                       |
 | `lib/projects-service/`      | Project CRUD, environment profiles, integration packages                                                         |
@@ -360,6 +367,8 @@ Every file in `components/shared/` must appear here:
 | :----------------- | :------------ | :-------------- | :--------------------- |
 | `theme-toggle.tsx` | `ThemeToggle` | Global (layout) | Light/dark mode switch |
 | `color-toggle.tsx` | `ColorToggle` | Global (layout) | Accent color switch    |
+| `app-sidebar.tsx`  | `AppSidebar`  | Dashboard       | Main navigation sidebar|
+| `app-header.tsx`   | `AppHeader`   | Dashboard       | Main top header bar    |
 
 _(Add a row every time a new shared component is created. Remove the row if the component is deleted.)_
 

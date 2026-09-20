@@ -2,6 +2,7 @@
 
 import * as React from "react";
 import { ThemeProvider } from "@/components/context/theme-context";
+import { TooltipProvider } from "@/components/ui/tooltip";
 
 export interface RootProvidersProps {
   children: React.ReactNode;
@@ -14,7 +15,7 @@ export interface RootProvidersProps {
 export function RootProviders({ children }: RootProvidersProps) {
   return (
     <ThemeProvider defaultColor="default" defaultMode="dark">
-      {children}
+      <TooltipProvider>{children}</TooltipProvider>
     </ThemeProvider>
   );
 }
