@@ -1,22 +1,30 @@
 import { NextResponse } from "next/server";
+import { ZodError } from "zod";
+import { Prisma } from "@prisma/client";
 import {
   ResponseMeta,
   PaginationInfo,
   SingleResourceSuccessEnvelope,
   PaginatedListSuccessEnvelope,
   FailureEnvelope,
+  HttpStatus,
+  ErrorCode,
+  ERROR_REGISTRY,
+  FormattedValidationError,
 } from "./types";
 
+/**
+ * Clean, Central Response & Error Handling Service for TestLoom API Endpoints
+ */
 export class ResponseService {
   /**
-   * Helper to construct response metadata.
-   * Automatically extracts start time from Request header 'x-request-start-time' if present,
-   * or falls back gracefully to the current timestamp.
+   * Helper to construct response timing metadata.
+   * Reads start timestamp from 'x-request-start-time' header set by proxy.ts
    */
   public static createMeta(requestOrStartMs?: Request | number): ResponseMeta {
     const endedAtDate = new Date();
     const endedAt = endedAtDate.toISOString();
-    
+
     let startMs = endedAtDate.getTime();
     if (typeof requestOrStartMs === "number") {
       startMs = requestOrStartMs;
@@ -41,189 +49,163 @@ export class ResponseService {
   }
 
   // ==========================================
-  // Success Response Helpers
+  // Success Response Builders
   // ==========================================
 
-  /**
-   * Builds a standard HTTP 200 OK success response for a single resource
-   * Usage: return ResponseService.ok(project);
-   */
   public static ok<T>(
     data: T,
-    statusCode: number = 200,
+    status: HttpStatus = HttpStatus.OK,
     request?: Request
   ): NextResponse<SingleResourceSuccessEnvelope<T>> {
     const meta = this.createMeta(request);
-
     const body: SingleResourceSuccessEnvelope<T> = {
       success: true,
-      statusCode,
+      statusCode: status,
       data,
       pagination: null,
       meta,
     };
-
-    return NextResponse.json(body, { status: statusCode });
+    return NextResponse.json(body, { status });
   }
 
-  /**
-   * Builds a standard HTTP 201 Created success response
-   * Usage: return ResponseService.created(newProject);
-   */
   public static created<T>(
     data: T,
     request?: Request
   ): NextResponse<SingleResourceSuccessEnvelope<T>> {
-    return this.ok(data, 201, request);
+    return this.ok(data, HttpStatus.CREATED, request);
   }
 
-  /**
-   * Builds a standard HTTP 200 success response for a paginated list collection
-   * Usage: return ResponseService.paginated(projects, paginationInfo);
-   */
   public static paginated<T>(
     data: T[],
     pagination: PaginationInfo,
-    statusCode: number = 200,
+    status: HttpStatus = HttpStatus.OK,
     request?: Request
   ): NextResponse<PaginatedListSuccessEnvelope<T>> {
     const meta = this.createMeta(request);
-
     const body: PaginatedListSuccessEnvelope<T> = {
       success: true,
-      statusCode,
+      statusCode: status,
       data,
       pagination,
       meta,
     };
-
-    return NextResponse.json(body, { status: statusCode });
+    return NextResponse.json(body, { status });
   }
 
   // ==========================================
-  // Error Response Helpers
+  // Data-Driven Error Response Builders (DRY)
   // ==========================================
 
   /**
-   * Builds a generic error response envelope
+   * Universal failure envelope builder.
+   * Automatically resolves HTTP status code and default message from ERROR_REGISTRY map.
    */
   public static fail(
-    statusCode: number,
-    code: string,
-    message: string,
-    request?: Request
+    errorCode: ErrorCode = ErrorCode.INTERNAL_SERVER_ERROR,
+    message?: string,
+    request?: Request,
+    details?: unknown
   ): NextResponse<FailureEnvelope> {
+    const errorDef = ERROR_REGISTRY[errorCode] || ERROR_REGISTRY[ErrorCode.INTERNAL_SERVER_ERROR];
+    const status = errorDef.status;
+    const finalMessage = message || errorDef.defaultMessage;
     const meta = this.createMeta(request);
 
     const body: FailureEnvelope = {
       success: false,
-      statusCode,
+      statusCode: status,
       data: null,
       pagination: null,
       error: {
-        code,
-        message,
+        code: errorDef.code,
+        message: finalMessage,
+        ...(details ? { details } : {}),
       },
       meta,
     };
 
-    return NextResponse.json(body, { status: statusCode });
+    return NextResponse.json(body, { status });
   }
 
-  /**
-   * HTTP 400 Bad Request
-   * Usage: return ResponseService.badRequest("Invalid input parameters");
-   */
-  public static badRequest(
-    message: string = "Bad request",
-    code: string = "BAD_REQUEST",
-    request?: Request
-  ): NextResponse<FailureEnvelope> {
-    return this.fail(400, code, message, request);
+  // Convenient HTTP Failure Aliases
+  public static badRequest(message?: string, request?: Request, details?: unknown) {
+    return this.fail(ErrorCode.BAD_REQUEST, message, request, details);
   }
 
-  /**
-   * HTTP 401 Unauthorized (Authentication required / invalid token)
-   * Usage: return ResponseService.unauthorized("Authentication required");
-   */
-  public static unauthorized(
-    message: string = "Authentication required",
-    code: string = "UNAUTHORIZED",
-    request?: Request
-  ): NextResponse<FailureEnvelope> {
-    return this.fail(401, code, message, request);
+  public static unauthorized(message?: string, request?: Request) {
+    return this.fail(ErrorCode.UNAUTHORIZED, message, request);
   }
 
-  /**
-   * HTTP 403 Forbidden (RBAC permission denied)
-   * Usage: return ResponseService.forbidden("Admin role required");
-   */
-  public static forbidden(
-    message: string = "Access denied: insufficient permissions",
-    code: string = "FORBIDDEN",
-    request?: Request
-  ): NextResponse<FailureEnvelope> {
-    return this.fail(403, code, message, request);
+  public static forbidden(message?: string, request?: Request) {
+    return this.fail(ErrorCode.FORBIDDEN, message, request);
   }
 
-  /**
-   * HTTP 404 Not Found (Resource does not exist)
-   * Usage: return ResponseService.notFound("Project not found");
-   */
-  public static notFound(
-    message: string = "Resource not found",
-    code: string = "NOT_FOUND",
-    request?: Request
-  ): NextResponse<FailureEnvelope> {
-    return this.fail(404, code, message, request);
+  public static notFound(message?: string, request?: Request) {
+    return this.fail(ErrorCode.NOT_FOUND, message, request);
   }
 
-  /**
-   * HTTP 409 Conflict (Duplicate entity / state conflict)
-   * Usage: return ResponseService.conflict("Project slug already exists");
-   */
-  public static conflict(
-    message: string = "Resource state conflict",
-    code: string = "CONFLICT",
-    request?: Request
-  ): NextResponse<FailureEnvelope> {
-    return this.fail(409, code, message, request);
+  public static conflict(message?: string, request?: Request) {
+    return this.fail(ErrorCode.CONFLICT, message, request);
   }
 
-  /**
-   * HTTP 422 Unprocessable Entity (Zod input validation failure)
-   * Usage: return ResponseService.unprocessable("Invalid target Base URL format");
-   */
-  public static unprocessable(
-    message: string = "Validation failed for request payload",
-    code: string = "UNPROCESSABLE_ENTITY",
-    request?: Request
-  ): NextResponse<FailureEnvelope> {
-    return this.fail(422, code, message, request);
+  public static unprocessable(message?: string, request?: Request, details?: unknown) {
+    return this.fail(ErrorCode.UNPROCESSABLE_ENTITY, message, request, details);
   }
 
-  /**
-   * HTTP 429 Too Many Requests (Rate limit exceeded)
-   * Usage: return ResponseService.tooManyRequests("Rate limit exceeded");
-   */
-  public static tooManyRequests(
-    message: string = "Rate limit exceeded. Please try again later.",
-    code: string = "TOO_MANY_REQUESTS",
-    request?: Request
-  ): NextResponse<FailureEnvelope> {
-    return this.fail(429, code, message, request);
+  public static tooManyRequests(message?: string, request?: Request) {
+    return this.fail(ErrorCode.TOO_MANY_REQUESTS, message, request);
   }
 
+  public static internalError(message?: string, request?: Request) {
+    return this.fail(ErrorCode.INTERNAL_SERVER_ERROR, message, request);
+  }
+
+  // ==========================================
+  // Centralized Error Handling Strategy
+  // ==========================================
+
   /**
-   * HTTP 500 Internal Server Error
-   * Usage: return ResponseService.internalError("Database connection error");
+   * Universal Exception Handler for Route Handlers & Middleware.
+   * Intercepts ZodError, PrismaError, or unknown Errors and maps to FailureEnvelope.
    */
-  public static internalError(
-    message: string = "Internal server error",
-    code: string = "INTERNAL_SERVER_ERROR",
-    request?: Request
-  ): NextResponse<FailureEnvelope> {
-    return this.fail(500, code, message, request);
+  public static handleError(error: unknown, request?: Request): NextResponse<FailureEnvelope> {
+    if (error instanceof ZodError) {
+      const validationErrors: FormattedValidationError[] = error.issues.map((issue) => ({
+        field: issue.path.join("."),
+        message: issue.message,
+      }));
+
+      const summary = validationErrors.length > 0
+        ? `Validation failed: ${validationErrors[0].field} - ${validationErrors[0].message}`
+        : "Validation failed";
+
+      return this.unprocessable(summary, request, validationErrors);
+    }
+
+    if (error instanceof Prisma.PrismaClientKnownRequestError) {
+      switch (error.code) {
+        case "P2002": {
+          const target = (error.meta?.target as string[])?.join(", ") || "field";
+          return this.conflict(`A record with this ${target} already exists.`, request);
+        }
+        case "P2025": {
+          return this.notFound("The requested database record was not found.", request);
+        }
+        default: {
+          console.error("[ResponseService] Prisma Known Request Error:", error.code, error.message);
+          return this.fail(ErrorCode.DATABASE_ERROR, "A database constraint error occurred.", request);
+        }
+      }
+    }
+
+    if (error instanceof Error) {
+      console.error("[ResponseService] Unhandled Exception:", error.name, error.message, error.stack);
+      const msg = process.env.NODE_ENV === "development" ? error.message : undefined;
+      return this.internalError(msg, request);
+    }
+
+    console.error("[ResponseService] Unknown Exception Object:", error);
+    return this.internalError(undefined, request);
   }
 }
 

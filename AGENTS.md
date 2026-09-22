@@ -47,6 +47,11 @@ testloom/
 │   ├── ui/                            → Immutable Shadcn / Base-UI primitives
 │   ├── shared/                        → Reusable cross-page components
 │   └── pages/<page-name>/_components/ → Page-exclusive components
+├── middleware/                        → Root API Route Handler Middlewares (rate-limit, idempotency, rbac)
+│   ├── <middleware-name>/
+│   │   ├── types.ts
+│   │   └── <middleware-name>.middleware.ts
+│   └── types.ts                       → RouteHandler & RouteHandlerContext types
 ├── lib/
 │   └── <service-name>/
 │       ├── types.ts
@@ -165,7 +170,7 @@ lib/<service-name>/
 
 | Service                      | Responsibility                                                                                                   |
 | :--------------------------- | :--------------------------------------------------------------------------------------------------------------- |
-| `lib/response-service/`       | Standard API response envelope formatting (`ok`, `paginated`, `fail`), status codes & timing metadata |
+| `lib/response-service/`       | Standard API response envelopes (`ok`, `paginated`, `fail`), `AppError` exception class & `handleError` strategy |
 | `lib/auth-service/`          | Sign up, login, refresh token issuance/rotation, invite token validation                                         |
 | `lib/organizations-service/` | Organization creation, membership, role assignment/invites                                                       |
 | `lib/projects-service/`      | Project CRUD, environment profiles, integration packages                                                         |
@@ -174,6 +179,7 @@ lib/<service-name>/
 | `lib/playwright-service/`    | Browser context lifecycle, step execution, replay strategy resolution, self-healing selector cascade             |
 | `lib/export-service/`        | Code generation per `targetFramework` (Playwright TS / Cypress / Selenium / Cucumber)                            |
 | `lib/rbac-service/`          | Central permission-matrix checks (Admin / QA Engineer / Viewer) — the **only** place role checks are implemented |
+| `lib/idempotency-service/`   | Request deduplication checking, key locking, response caching, lock release, and expired record purging         |
 
 **Do not duplicate permission logic anywhere else.** Every route handler or server action that needs a role check calls `rbac-service`, never re-derives it from `organization_members.role` directly.
 
@@ -248,11 +254,13 @@ All API responses use one consistent envelope so client-side error handling, pag
 
 - `pagination` is `null` for single-resource responses and non-list endpoints — never omit the key, so client-side types stay consistent across every response.
 - `meta` is **always present**, success or failure — `responseTimeMs` is measured from the start of the route handler to just before the response is returned; `startedAt`/`endedAt` are ISO-8601 timestamps.
-- Define the builders in `lib/api-response-service/types.ts` and `lib/api-response-service/api-response.service.ts`:
-    - `ApiResponseService.ok(data, meta?)` → single-resource success
-    - `ApiResponseService.paginated(data, pagination, meta?)` → list success
-    - `ApiResponseService.fail(statusCode, code, message, meta?)` → failure
-- Every `app/api/**/route.ts` handler wraps its logic to capture `startedAt`/`endedAt`/`responseTimeMs` and passes through one of the three builders above — never returns a raw `NextResponse.json({...})` with an ad hoc shape.
+- Defined in `lib/response-service/types.ts` and `lib/response-service/response.service.ts`:
+    - Uses `HttpStatus` and `ErrorCode` enums bound via data-driven `ERROR_REGISTRY`.
+    - `ResponseService.ok(data, status?, request?)` → single-resource success
+    - `ResponseService.paginated(data, pagination, status?, request?)` → list success
+    - `ResponseService.fail(errorCode, message?, request?, details?)` → data-driven failure response
+    - `ResponseService.handleError(error, request)` → central exception strategy (ZodError, PrismaError, runtime errors).
+- Every `app/api/**/route.ts` handler passes its outputs through `ResponseService` — never returns a raw `NextResponse.json({...})` with an ad hoc shape.
 
 ### 3.3 Input Validation
 
@@ -263,6 +271,13 @@ All API responses use one consistent envelope so client-side error handling, pag
 
 - Every protected route resolves the current user/session at the top of the handler (via `lib/auth-service/`) before doing anything else.
 - Role checks go through `lib/rbac-service/`, called with the resolved user + target resource (project/organization) — never inferred ad hoc from request headers or client-supplied role claims.
+
+### 3.5 API Route Handler Middleware Rules (`middleware/`)
+
+- All Route Handler Middlewares reside under the root `middleware/` folder.
+- **Folder per Middleware**: Each middleware has its own directory containing `types.ts` and `<middleware-name>.middleware.ts` (e.g., `middleware/rate-limit/`, `middleware/idempotency/`, `middleware/rbac/`).
+- **Single Standard Signature**: Every middleware wrapper uses the signature `middlewareName(handler, options?)`.
+- **Full Next.js Signature Support**: Middlewares receive `(request: NextRequest | Request, context?: { params?: Promise<T> | T })` supporting dynamic route parameters seamlessly.
 
 ---
 
