@@ -22,27 +22,164 @@ This document is the authoritative list of every API endpoint in TestLoom, which
 
 ## 2. Full API Catalog
 
-### 2.1 Authentication & OTP
+### 2.1 Authentication & Sessions
 
-| Method | Path                    | Auth                   | Role | Idempotent?   | Notes                                                                                                                                                   |
-| :----- | :---------------------- | :--------------------- | :--- | :------------ | :------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| POST   | `/api/auth/signup`      | Public                 | —    | Yes (key)     | Duplicate submits (double-click, retry) must not create two `User` rows for the same email.                                                             |
-| POST   | `/api/auth/request-otp` | Public                 | —    | No            | Each call **must** generate and send a fresh OTP. Protected by rate limiting instead (see §4.2), not idempotency.                                       |
-| POST   | `/api/auth/verify-otp`  | Public                 | —    | Yes (natural) | Verifying an already-consumed/expired OTP just re-returns the appropriate error; verifying a valid OTP twice must not issue two token pairs — see §3.2. |
-| POST   | `/api/auth/resend-otp`  | Public                 | —    | No            | Same reasoning as `request-otp`; cooldown-gated, not idempotency-gated.                                                                                 |
-| POST   | `/api/auth/login`       | Public                 | —    | Yes (natural) | Stateless check; safe to retry.                                                                                                                         |
-| POST   | `/api/auth/refresh`     | Public (refresh token) | —    | Yes (key)     | **Critical.** A network retry must not rotate the refresh token twice — see §3.2.                                                                       |
-| POST   | `/api/auth/logout`      | Required               | Any  | Yes (natural) | Invalidating an already-invalid token is a no-op.                                                                                                       |
-| POST   | `/api/auth/logout-all`  | Required               | Any  | Yes (natural) | Same.                                                                                                                                                   |
-| GET    | `/api/auth/me`          | Required               | Any  | Yes (natural) | Read-only.                                                                                                                                              |
+| Method | Path                    | Auth                   | Role | Idempotent?   | Status     | Notes                                                                                                                                                   |
+| :----- | :---------------------- | :--------------------- | :--- | :------------ | :--------- | :------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| POST   | `/api/auth/signup`      | Public                 | —    | Yes (key)     | ✅ Done     | **Primary.** Registers new user (`firstName`, `lastName`, `email`, `password`). Stores session in DB; issues `access_token` HTTP-only cookie.          |
+| POST   | `/api/auth/login`       | Public                 | —    | Yes (natural) | ✅ Done     | **Primary.** Authenticates user (`email` + `password`). Stores session in DB; issues `access_token` HTTP-only cookie.                                  |
+| POST   | `/api/auth/logout`      | Required               | Any  | Yes (natural) | ✅ Done     | **Primary.** Revokes session record in DB & clears `access_token` HTTP-only cookie.                                                                     |
+| POST   | `/api/auth/logout-all`  | Required               | Any  | Yes (natural) | ✅ Done     | **Primary.** Revokes all active session records for user & clears cookies.                                                                              |
+| GET    | `/api/auth/me`          | Required               | Any  | Yes (natural) | ✅ Done     | **Primary.** Returns profile of currently authenticated user (`id`, `email`, `firstName`, `lastName`, `status`).                                       |
+| POST   | `/api/auth/request-otp` | Public                 | —    | No            | ⏳ Reserved | *(Future / Reserved)* Generates 6-digit OTP code for passwordless login.                                                                                |
+| POST   | `/api/auth/verify-otp`  | Public                 | —    | Yes (natural) | ⏳ Reserved | *(Future / Reserved)* Verifies OTP code from `otp_verifications`.                                                                                       |
+| POST   | `/api/auth/resend-otp`  | Public                 | —    | No            | ⏳ Reserved | *(Future / Reserved)* Cooldown-gated OTP re-issuance.                                                                                                   |
+
+#### 2.1.1 Authentication & OTP Detailed Specifications
+
+##### 1. `POST /api/auth/signup` (Password-Based Registration)
+- **Headers**: `Content-Type: application/json`, `Idempotency-Key` (Optional)
+- **Request Payload**:
+  ```json
+  {
+    "firstName": "John",
+    "lastName": "Doe",
+    "email": "john.doe@example.com",
+    "password": "StrongPassword123!"
+  }
+  ```
+- **Validation Rules**:
+  - `firstName`: string, 1–50 characters.
+  - `lastName`: string, 1–50 characters.
+  - `email`: valid lowercased email string.
+  - `password`: string, 8–100 characters, requiring at least 1 uppercase, 1 lowercase, 1 digit.
+- **Execution Flow**:
+  - Hashes password using `bcrypt` (salt rounds = 12).
+  - Inserts `User` record into database (`status: ACTIVE`, `isEmailVerified: false`).
+  - Generates Access Token JWT (12m expiration) and Refresh Token JWT (15d expiration).
+  - Stores both `accessToken` and `refreshToken` JWT strings in `refresh_tokens` session table in DB.
+  - Sets ONLY the `access_token` in HTTP-only, SameSite=Lax, Secure cookie (no refresh token in cookie).
+- **Success Response (`HTTP 201 Created`)**:
+  ```json
+  {
+    "success": true,
+    "statusCode": 201,
+    "data": {
+      "user": {
+        "id": "u_12345678-abcd-1234-abcd-123456789abc",
+        "email": "john.doe@example.com",
+        "firstName": "John",
+        "lastName": "Doe",
+        "isEmailVerified": false,
+        "status": "ACTIVE"
+      }
+    },
+    "pagination": null,
+    "meta": {
+      "responseTimeMs": 42,
+      "startedAt": "2026-09-22T21:45:00.000Z",
+      "endedAt": "2026-09-22T21:45:00.042Z"
+    }
+  }
+  ```
+
+##### 2. `POST /api/auth/login` (Password-Based Login)
+- **Headers**: `Content-Type: application/json`
+- **Request Payload**:
+  ```json
+  {
+    "email": "john.doe@example.com",
+    "password": "StrongPassword123!"
+  }
+  ```
+- **Execution Flow**:
+  - Verifies user exists and checks password hash.
+  - Generates Access Token (12m) and Refresh Token (15d).
+  - Stores both `accessToken` and `refreshToken` JWT strings in `refresh_tokens` DB table.
+  - Sets ONLY `access_token` as HTTP-only cookie.
+- **Success Response (`HTTP 200 OK`)**: Returns user profile & sets `access_token` cookie.
+
+##### 3. `POST /api/auth/request-otp` (OTP Code Generation)
+- **Headers**: `Content-Type: application/json`
+- **Request Payload**:
+  ```json
+  {
+    "email": "john.doe@example.com",
+    "purpose": "LOGIN"
+  }
+  ```
+- **Execution Flow**:
+  - Generates 6-digit numeric OTP code.
+  - Hashes OTP and saves to `otp_verifications` table (`expiresAt = now + 5m`).
+  - Dispatches OTP email. Rate-limited to max 5 req/hr.
+- **Success Response (`HTTP 200 OK`)**:
+  ```json
+  {
+    "success": true,
+    "statusCode": 200,
+    "data": {
+      "message": "OTP verification code sent to email successfully.",
+      "expiresInSeconds": 300
+    },
+    "pagination": null,
+    "meta": { ... }
+  }
+  ```
+
+##### 4. `POST /api/auth/verify-otp` (OTP Verification & Login)
+- **Headers**: `Content-Type: application/json`
+- **Request Payload**:
+  ```json
+  {
+    "email": "john.doe@example.com",
+    "otpCode": "849201",
+    "purpose": "LOGIN"
+  }
+  ```
+- **Execution Flow**:
+  - Validates active unexpired `otp_verifications` record.
+  - On match, sets `verifiedAt = now`, marks `User.isEmailVerified = true`.
+  - Generates Access Token & Refresh Token, stores tokens in `refresh_tokens` DB table.
+  - Sets ONLY `access_token` HTTP-only cookie.
+- **Success Response (`HTTP 200 OK`)**: Returns user profile & sets `access_token` cookie.
+
+##### 5. `POST /api/auth/refresh` (In-Place Session Token Rotation)
+- **Headers / Source**: Reads `access_token` from HTTP-only cookie or Authorization header.
+- **Execution Flow**:
+  - Uses the incoming `access_token` to locate the active user session record in `refresh_tokens` DB table (`WHERE accessToken = access_token`).
+  - Validates whether the associated `refreshToken` in DB is valid, unexpired (`expiresAt > now`), and not revoked (`revokedAt IS NULL`).
+  - **If Refresh Token is INVALID or Expired**: Returns `HTTP 401 Unauthorized` (`code: "UNAUTHORIZED_SESSION_EXPIRED"`), requiring re-login.
+  - **If Refresh Token is VALID**:
+    - Generates a **new** Access Token and a **new** Refresh Token.
+    - **Updates the current user's existing DB session row in-place** with the new `accessToken`, new `refreshToken`, `accessTokenExpiresAt`, and `expiresAt` (does NOT insert a new row).
+    - Sets the newly generated `access_token` in the HTTP-only cookie.
+- **Success Response (`HTTP 200 OK`)**:
+  ```json
+  {
+    "success": true,
+    "statusCode": 200,
+    "data": {
+      "refreshed": true,
+      "message": "Session token rotated successfully."
+    },
+    "pagination": null,
+    "meta": { ... }
+  }
+  ```
+
+##### 6. `POST /api/auth/logout` & `POST /api/auth/logout-all`
+- Clears `access_token` HTTP-only cookie and sets `isRevoked = true` on session records in database.
+
+##### 7. `GET /api/auth/me`
+- Returns profile of currently authenticated user (`id`, `email`, `firstName`, `lastName`, `isEmailVerified`, `status`).
 
 ### 2.2 User Profile
 
-| Method | Path                   | Auth     | Role | Idempotent?   | Notes                                                                             |
-| :----- | :--------------------- | :------- | :--- | :------------ | :-------------------------------------------------------------------------------- |
-| PATCH  | `/api/users/me`        | Required | Any  | Yes (natural) | Sets absolute field values.                                                       |
-| POST   | `/api/users/me/avatar` | Required | Any  | Yes (key)     | File upload — retry-safe upload requires a key to avoid duplicate storage writes. |
-| DELETE | `/api/users/me`        | Required | Any  | Yes (natural) | Soft-delete; repeating is a no-op.                                                |
+| Method | Path                   | Auth     | Role | Idempotent?   | Status     | Notes                                                                             |
+| :----- | :--------------------- | :------- | :--- | :------------ | :--------- | :-------------------------------------------------------------------------------- |
+| PATCH  | `/api/users/me`        | Required | Any  | Yes (natural) | ⏳ Pending | Sets absolute field values.                                                       |
+| POST   | `/api/users/me/avatar` | Required | Any  | Yes (key)     | ⏳ Pending | File upload — retry-safe upload requires a key to avoid duplicate storage writes. |
+| DELETE | `/api/users/me`        | Required | Any  | Yes (natural) | ⏳ Pending | Soft-delete; repeating is a no-op.                                                |
 
 ### 2.3 Organizations & Membership
 

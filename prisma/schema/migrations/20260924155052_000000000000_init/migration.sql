@@ -2,6 +2,12 @@
 CREATE TYPE "UserRole" AS ENUM ('ADMIN', 'QA_ENGINEER', 'VIEWER');
 
 -- CreateEnum
+CREATE TYPE "UserStatus" AS ENUM ('ACTIVE', 'INACTIVE', 'SUSPENDED', 'PENDING_VERIFICATION');
+
+-- CreateEnum
+CREATE TYPE "OtpPurpose" AS ENUM ('LOGIN', 'EMAIL_VERIFICATION', 'PASSWORD_RESET');
+
+-- CreateEnum
 CREATE TYPE "OwnershipType" AS ENUM ('PERSONAL', 'COMPANY');
 
 -- CreateEnum
@@ -259,11 +265,12 @@ CREATE TABLE "test_steps" (
 CREATE TABLE "users" (
     "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "email" TEXT NOT NULL,
-    "passwordHash" TEXT NOT NULL,
-    "name" TEXT NOT NULL,
+    "password" TEXT,
+    "firstName" TEXT NOT NULL,
+    "lastName" TEXT NOT NULL,
     "avatarUrl" TEXT,
-    "isEmailVerified" BOOLEAN NOT NULL DEFAULT false,
-    "status" TEXT NOT NULL DEFAULT 'ACTIVE',
+    "isVerified" BOOLEAN NOT NULL DEFAULT false,
+    "status" "UserStatus" NOT NULL DEFAULT 'ACTIVE',
     "createdAt" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "createdBy" UUID,
     "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -278,10 +285,11 @@ CREATE TABLE "users" (
 CREATE TABLE "refresh_tokens" (
     "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "userId" UUID NOT NULL,
-    "tokenHash" TEXT NOT NULL,
+    "accessToken" TEXT NOT NULL,
+    "refreshToken" TEXT NOT NULL,
+    "accessTokenExpiresAt" TIMESTAMPTZ,
     "expiresAt" TIMESTAMPTZ NOT NULL,
     "revokedAt" TIMESTAMPTZ,
-    "replacedByToken" TEXT,
     "createdAt" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "createdBy" UUID,
     "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -290,6 +298,26 @@ CREATE TABLE "refresh_tokens" (
     "deletedBy" UUID,
 
     CONSTRAINT "refresh_tokens_pkey" PRIMARY KEY ("id")
+);
+
+-- CreateTable
+CREATE TABLE "otp_verifications" (
+    "id" UUID NOT NULL DEFAULT gen_random_uuid(),
+    "userId" UUID,
+    "email" TEXT NOT NULL,
+    "otpHash" TEXT NOT NULL,
+    "purpose" "OtpPurpose" NOT NULL DEFAULT 'LOGIN',
+    "attempts" INTEGER NOT NULL DEFAULT 0,
+    "expiresAt" TIMESTAMPTZ NOT NULL,
+    "verifiedAt" TIMESTAMPTZ,
+    "createdAt" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "createdBy" UUID,
+    "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    "updatedBy" UUID,
+    "deletedAt" TIMESTAMPTZ,
+    "deletedBy" UUID,
+
+    CONSTRAINT "otp_verifications_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateTable
@@ -395,10 +423,22 @@ CREATE UNIQUE INDEX "test_steps_scenarioId_stepOrder_key" ON "test_steps"("scena
 CREATE UNIQUE INDEX "users_email_key" ON "users"("email");
 
 -- CreateIndex
-CREATE UNIQUE INDEX "refresh_tokens_tokenHash_key" ON "refresh_tokens"("tokenHash");
+CREATE UNIQUE INDEX "refresh_tokens_accessToken_key" ON "refresh_tokens"("accessToken");
+
+-- CreateIndex
+CREATE UNIQUE INDEX "refresh_tokens_refreshToken_key" ON "refresh_tokens"("refreshToken");
 
 -- CreateIndex
 CREATE INDEX "refresh_tokens_userId_idx" ON "refresh_tokens"("userId");
+
+-- CreateIndex
+CREATE INDEX "refresh_tokens_accessToken_idx" ON "refresh_tokens"("accessToken");
+
+-- CreateIndex
+CREATE INDEX "otp_verifications_userId_idx" ON "otp_verifications"("userId");
+
+-- CreateIndex
+CREATE INDEX "otp_verifications_email_idx" ON "otp_verifications"("email");
 
 -- CreateIndex
 CREATE INDEX "test_workflows_projectId_idx" ON "test_workflows"("projectId");
@@ -468,6 +508,9 @@ ALTER TABLE "test_steps" ADD CONSTRAINT "test_steps_scenarioId_fkey" FOREIGN KEY
 
 -- AddForeignKey
 ALTER TABLE "refresh_tokens" ADD CONSTRAINT "refresh_tokens_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+-- AddForeignKey
+ALTER TABLE "otp_verifications" ADD CONSTRAINT "otp_verifications_userId_fkey" FOREIGN KEY ("userId") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
 -- AddForeignKey
 ALTER TABLE "test_workflows" ADD CONSTRAINT "test_workflows_projectId_fkey" FOREIGN KEY ("projectId") REFERENCES "projects"("id") ON DELETE CASCADE ON UPDATE CASCADE;

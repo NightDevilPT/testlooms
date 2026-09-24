@@ -50,8 +50,8 @@ export class PlaywrightService {
   ): Promise<PlaywrightSession> {
     let session = sessions.get(sessionId);
 
-    if (session && !session.page.isClosed()) {
-      if (initialUrl && initialUrl !== session.currentUrl) {
+    if (session && !session.page.isClosed() && !session.isClosed) {
+      if (initialUrl && initialUrl !== session.currentUrl && initialUrl !== 'about:blank') {
         await this.navigateSession(sessionId, initialUrl);
       }
       return session;
@@ -64,8 +64,9 @@ export class PlaywrightService {
     const viewport = { width: 1280, height: 800 };
 
     // Optimized Chromium launch arguments for maximum speed and rendering
+    const isHeadless = process.env.HEADLESS === 'true';
     const browser = await chromium.launch({
-      headless: true,
+      headless: isHeadless,
       args: [
         '--no-sandbox',
         '--disable-setuid-sandbox',
@@ -98,14 +99,20 @@ export class PlaywrightService {
 
     const page = await context.newPage();
 
+    const formattedInitialUrl = initialUrl
+      ? (initialUrl.startsWith('http://') || initialUrl.startsWith('https://') ? initialUrl : `https://${initialUrl}`)
+      : 'https://example.com';
+
     session = {
       sessionId,
       browser,
       context,
       page,
-      currentUrl: '',
-      pageTitle: 'New Tab',
+      currentUrl: formattedInitialUrl,
+      initialUrl: formattedInitialUrl,
+      pageTitle: 'Loading...',
       isLoading: false,
+      isClosed: false,
       viewport,
       latestClickedElement: null,
       actionLogs: [],
@@ -115,24 +122,145 @@ export class PlaywrightService {
 
     sessions.set(sessionId, session);
 
+    // Event listener for Chromium browser window close
+    const handleClose = () => {
+      const activeSession = sessions.get(sessionId);
+      if (activeSession) {
+        activeSession.isClosed = true;
+        activeSession.pageTitle = 'Browser Window Closed';
+        activeSession.lastUpdated = Date.now();
+        const lastLog = activeSession.actionLogs[0];
+        if (!lastLog || lastLog.description !== 'Then the browser session was closed') {
+          activeSession.actionLogs.unshift({
+            id: Math.random().toString(36).substring(2, 9),
+            type: 'navigate',
+            description: 'Then the browser session was closed',
+            timestamp: new Date().toLocaleTimeString(),
+          });
+        }
+      }
+    };
+
+    page.on('close', handleClose);
+    context.on('close', handleClose);
+    browser.on('disconnected', handleClose);
+
     // Expose click handler
     await page.exposeFunction('__testloom_on_click__', (elementData: ClickedElementInfo) => {
       const activeSession = sessions.get(sessionId);
-      if (activeSession) {
+      if (activeSession && !activeSession.isClosed) {
         activeSession.latestClickedElement = elementData;
         activeSession.lastUpdated = Date.now();
+
+        const targetTag = elementData.tagName ? elementData.tagName.toLowerCase() : 'element';
+        const textPreview = elementData.innerText ? `"${elementData.innerText.substring(0, 35)}"` : '';
+        const identifier = elementData.id ? `#${elementData.id}` : (elementData.selector ? `<${elementData.selector}>` : `<${targetTag}>`);
+        const clickDescription = textPreview
+          ? `When I click on ${textPreview} (${identifier})`
+          : `When I click on element ${identifier}`;
+
         activeSession.actionLogs.unshift({
           id: Math.random().toString(36).substring(2, 9),
           type: 'click',
-          description: `Clicked <${elementData.tagName.toLowerCase()}> element`,
+          description: clickDescription,
           selector: elementData.selector,
+          xpath: elementData.xpath,
+          elementId: elementData.id,
+          className: elementData.className,
+          tagName: elementData.tagName,
+          innerText: elementData.innerText,
           details: elementData.selector,
           timestamp: new Date().toLocaleTimeString(),
         });
       }
     });
 
-    // Inject click & file input listener
+    // Expose input & form change handler with smart log deduplication
+    await page.exposeFunction('__testloom_on_change__', (data: { selector: string; value: string; type: string; tagName: string; id?: string; className?: string; xpath?: string }) => {
+      const activeSession = sessions.get(sessionId);
+      if (activeSession && !activeSession.isClosed && data.selector) {
+        activeSession.lastUpdated = Date.now();
+        const lastLog = activeSession.actionLogs[0];
+
+        const targetTag = data.tagName ? data.tagName.toLowerCase() : 'element';
+        const identifier = data.id ? `#${data.id}` : `<${data.selector}>`;
+        const changeDescription = data.tagName === 'SELECT'
+          ? `And I select option "${data.value}" from dropdown (${identifier})`
+          : `And I type "${data.value}" into field (${identifier})`;
+
+        if (lastLog && (lastLog.type === 'type' || lastLog.type === 'select_option') && lastLog.selector === data.selector) {
+          lastLog.value = data.value;
+          lastLog.description = changeDescription;
+          lastLog.timestamp = new Date().toLocaleTimeString();
+        } else {
+          activeSession.actionLogs.unshift({
+            id: Math.random().toString(36).substring(2, 9),
+            type: data.tagName === 'SELECT' ? 'select_option' : 'type',
+            description: changeDescription,
+            selector: data.selector,
+            xpath: data.xpath,
+            elementId: data.id,
+            className: data.className,
+            tagName: data.tagName,
+            value: data.value,
+            timestamp: new Date().toLocaleTimeString(),
+          });
+        }
+      }
+    });
+
+    // Expose scroll handler with smart log update
+    await page.exposeFunction('__testloom_on_scroll__', (scrollData: { scrollY: number; scrollX: number }) => {
+      const activeSession = sessions.get(sessionId);
+      if (activeSession && !activeSession.isClosed) {
+        activeSession.lastUpdated = Date.now();
+        const lastLog = activeSession.actionLogs[0];
+        const scrollAmount = Math.round(scrollData.scrollY);
+        const scrollDescription = `And I scroll down page to ${scrollAmount}px`;
+
+        if (lastLog && lastLog.type === 'scroll') {
+          lastLog.value = `${scrollAmount}px`;
+          lastLog.description = scrollDescription;
+          lastLog.timestamp = new Date().toLocaleTimeString();
+        } else {
+          activeSession.actionLogs.unshift({
+            id: Math.random().toString(36).substring(2, 9),
+            type: 'scroll',
+            description: scrollDescription,
+            value: `${scrollAmount}px`,
+            timestamp: new Date().toLocaleTimeString(),
+          });
+        }
+      }
+    });
+
+    // Listen to automatic page navigation events
+    page.on('framenavigated', async (frame) => {
+      if (frame === page.mainFrame()) {
+        const url = frame.url();
+        if (url && url !== 'about:blank' && session && !session.isClosed) {
+          session.currentUrl = url;
+          try {
+            session.pageTitle = await page.title();
+          } catch {
+            session.pageTitle = url;
+          }
+          session.lastUpdated = Date.now();
+          const lastLog = session.actionLogs[0];
+          if (!lastLog || lastLog.type !== 'navigate' || lastLog.value !== url) {
+            session.actionLogs.unshift({
+              id: Math.random().toString(36).substring(2, 9),
+              type: 'navigate',
+              description: `Given I navigate to "${url}"`,
+              value: url,
+              timestamp: new Date().toLocaleTimeString(),
+            });
+          }
+        }
+      }
+    });
+
+    // Inject DOM event listeners into Chromium browser window
     await page.addInitScript(() => {
       const getCssSelector = (el: HTMLElement): string => {
         if (el.id) return `#${el.id}`;
@@ -186,6 +314,27 @@ export class PlaywrightService {
         return parts.length ? '/' + parts.join('/') : '';
       };
 
+      // Helper function to dispatch typing & change events to Playwright
+      const dispatchChangeEvent = (target: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement) => {
+        if (!target || !target.tagName) return;
+        const selector = getCssSelector(target);
+        const value = target.value || '';
+        const xpath = getXPath(target);
+
+        if (typeof (window as unknown as { __testloom_on_change__?: (d: Record<string, string>) => void }).__testloom_on_change__ === 'function') {
+          (window as unknown as { __testloom_on_change__: (d: Record<string, string>) => void }).__testloom_on_change__({
+            selector,
+            value,
+            type: target.type || 'text',
+            tagName: target.tagName,
+            id: target.id || '',
+            className: typeof target.className === 'string' ? target.className : '',
+            xpath,
+          });
+        }
+      };
+
+      // Listen for click events inside browser window
       window.addEventListener(
         'click',
         (e: MouseEvent) => {
@@ -235,11 +384,80 @@ export class PlaywrightService {
         },
         true
       );
+
+      // Listen for real-time input typing events with 200ms debounce
+      let inputDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+      window.addEventListener(
+        'input',
+        (e: Event) => {
+          try {
+            const target = e.target as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
+            if (!target || !target.tagName) return;
+
+            if (inputDebounceTimer) clearTimeout(inputDebounceTimer);
+            inputDebounceTimer = setTimeout(() => {
+              dispatchChangeEvent(target);
+            }, 200);
+          } catch (err) {
+            console.error('TestLoom input listener error:', err);
+          }
+        },
+        true
+      );
+
+      // Listen for blur/change events on form elements
+      window.addEventListener(
+        'change',
+        (e: Event) => {
+          try {
+            const target = e.target as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
+            dispatchChangeEvent(target);
+          } catch (err) {
+            console.error('TestLoom change listener error:', err);
+          }
+        },
+        true
+      );
+
+      window.addEventListener(
+        'blur',
+        (e: FocusEvent) => {
+          try {
+            const target = e.target as HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement;
+            if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT')) {
+              dispatchChangeEvent(target);
+            }
+          } catch (err) {
+            console.error('TestLoom blur listener error:', err);
+          }
+        },
+        true
+      );
+
+      // Listen for window scroll events with 250ms debounce
+      let scrollDebounceTimer: ReturnType<typeof setTimeout> | null = null;
+      window.addEventListener(
+        'scroll',
+        () => {
+          try {
+            if (scrollDebounceTimer) clearTimeout(scrollDebounceTimer);
+            scrollDebounceTimer = setTimeout(() => {
+              if (typeof (window as unknown as { __testloom_on_scroll__?: (d: { scrollY: number; scrollX: number }) => void }).__testloom_on_scroll__ === 'function') {
+                (window as unknown as { __testloom_on_scroll__: (d: { scrollY: number; scrollX: number }) => void }).__testloom_on_scroll__({
+                  scrollY: window.scrollY || window.pageYOffset || 0,
+                  scrollX: window.scrollX || window.pageXOffset || 0,
+                });
+              }
+            }, 250);
+          } catch (err) {
+            console.error('TestLoom scroll listener error:', err);
+          }
+        },
+        { passive: true, capture: true }
+      );
     });
 
-    if (initialUrl) {
-      await this.navigateSession(sessionId, initialUrl);
-    }
+    await this.navigateSession(sessionId, formattedInitialUrl);
 
     return session;
   }
@@ -260,7 +478,8 @@ export class PlaywrightService {
     session.actionLogs.unshift({
       id: Math.random().toString(36).substring(2, 9),
       type: 'navigate',
-      description: `Navigating to ${targetUrl}`,
+      description: `Given I navigate to "${targetUrl}"`,
+      value: targetUrl,
       url: targetUrl,
       timestamp: new Date().toLocaleTimeString(),
     });
@@ -315,7 +534,7 @@ export class PlaywrightService {
       session.actionLogs.unshift({
         id: Math.random().toString(36).substring(2, 9),
         type: 'click',
-        description: `Clicked element <${selector}>`,
+        description: `When I click on element <${selector}>`,
         selector,
         timestamp: new Date().toLocaleTimeString(),
       });
@@ -336,7 +555,7 @@ export class PlaywrightService {
       session.actionLogs.unshift({
         id: Math.random().toString(36).substring(2, 9),
         type: 'type',
-        description: `Filled "${text}" into <${selector}>`,
+        description: `And I type "${text}" into field <${selector}>`,
         selector,
         value: text,
         timestamp: new Date().toLocaleTimeString(),
@@ -358,7 +577,7 @@ export class PlaywrightService {
       session.actionLogs.unshift({
         id: Math.random().toString(36).substring(2, 9),
         type: 'select_option',
-        description: `Selected option "${value}" in <${selector}>`,
+        description: `And I select option "${value}" from dropdown <${selector}>`,
         selector,
         value,
         timestamp: new Date().toLocaleTimeString(),
@@ -693,12 +912,159 @@ export class PlaywrightService {
   }
 
   /**
+   * Replay all recorded action steps sequentially from start to finish
+   */
+  static async replaySession(
+    sessionId: string,
+    fallbackTargetUrl?: string,
+    customActionLogs?: ActionLog[]
+  ): Promise<PlaywrightSession> {
+    let session = sessions.get(sessionId);
+
+    // If browser session was closed or missing, recreate it using initialUrl or fallbackTargetUrl
+    if (!session || session.page.isClosed() || session.isClosed) {
+      const initialUrl = fallbackTargetUrl || session?.initialUrl || session?.currentUrl || 'https://example.com';
+      session = await this.getOrCreateSession(sessionId, initialUrl);
+    }
+
+    const logsToReplay = (customActionLogs && customActionLogs.length > 0)
+      ? customActionLogs
+      : (session.actionLogs.length > 0 ? session.actionLogs : []);
+
+    if (logsToReplay.length === 0) {
+      if (session.currentUrl && session.currentUrl !== 'about:blank') {
+        await this.navigateSession(sessionId, session.currentUrl);
+      } else if (fallbackTargetUrl) {
+        await this.navigateSession(sessionId, fallbackTargetUrl);
+      }
+      return session;
+    }
+
+    // Restore logs on session if customActionLogs was provided
+    if (customActionLogs && customActionLogs.length > 0 && session.actionLogs.length === 0) {
+      session.actionLogs = [...customActionLogs];
+    }
+
+    // Snapshot recorded steps in chronological order (#1 to #N)
+    const recordedSteps = [...logsToReplay].reverse();
+
+    // Determine initial target website URL
+    const initialNavigateStep = recordedSteps.find((s) => s.type === 'navigate' && s.value && s.value !== 'about:blank');
+    const targetUrl = initialNavigateStep?.value || initialNavigateStep?.url || session.initialUrl || (session.currentUrl && session.currentUrl !== 'about:blank' ? session.currentUrl : undefined) || fallbackTargetUrl || 'https://example.com';
+
+    session.isLoading = true;
+    session.lastUpdated = Date.now();
+
+    try {
+      // 1. First navigate to target URL
+      await session.page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 20000 }).catch(() => {});
+      session.currentUrl = session.page.url();
+      try {
+        session.pageTitle = await session.page.title();
+      } catch {
+        session.pageTitle = targetUrl;
+      }
+
+      // 2. Step through each recorded action sequentially with 700ms human delay
+      for (const step of recordedSteps) {
+        if (session.page.isClosed() || session.isClosed) break;
+
+        await new Promise((res) => setTimeout(res, 700));
+
+        switch (step.type) {
+          case 'navigate':
+            const navTarget = step.value || step.url;
+            if (navTarget && navTarget !== 'about:blank' && navTarget !== session.page.url()) {
+              await session.page.goto(navTarget, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
+            }
+            break;
+
+          case 'click':
+            if (step.selector) {
+              await session.page.click(step.selector, { timeout: 5000 }).catch(async () => {
+                if (step.xpath) await session.page.click(step.xpath, { timeout: 3000 }).catch(() => {});
+              });
+            }
+            break;
+
+          case 'type':
+            if (step.selector && step.value !== undefined) {
+              await session.page.fill(step.selector, step.value, { timeout: 5000 }).catch(() => {});
+            }
+            break;
+
+          case 'select_option':
+            if (step.selector && step.value !== undefined) {
+              await session.page.selectOption(step.selector, step.value, { timeout: 5000 }).catch(() => {});
+            }
+            break;
+
+          case 'scroll':
+            const scrollPos = parseInt(step.value || '300', 10) || 300;
+            await session.page.evaluate((y) => window.scrollTo({ top: y, behavior: 'smooth' }), scrollPos).catch(() => {});
+            break;
+
+          case 'press_key':
+            if (step.key) {
+              await session.page.keyboard.press(step.key).catch(() => {});
+            }
+            break;
+
+          case 'assert_visible':
+            if (step.selector) {
+              await session.page.isVisible(step.selector).catch(() => {});
+            }
+            break;
+
+          case 'assert_text':
+            if (step.selector) {
+              await session.page.innerText(step.selector).catch(() => {});
+            }
+            break;
+
+          default:
+            break;
+        }
+
+        session.currentUrl = session.page.url();
+        try {
+          session.pageTitle = await session.page.title();
+        } catch {
+          // Ignore title error
+        }
+        session.lastUpdated = Date.now();
+      }
+
+      // 3. Auto-close browser window cleanly after replay completes all steps
+      await new Promise((res) => setTimeout(res, 1000));
+      if (session && !session.isClosed && !session.page.isClosed()) {
+        session.isClosed = true;
+        session.pageTitle = 'Replay Completed & Closed';
+        session.lastUpdated = Date.now();
+        session.actionLogs.unshift({
+          id: Math.random().toString(36).substring(2, 9),
+          type: 'navigate',
+          description: 'Then replay finished and browser window was closed',
+          timestamp: new Date().toLocaleTimeString(),
+        });
+        await this.closeSession(sessionId);
+      }
+    } catch (err) {
+      console.error(`Replay error for session ${sessionId}:`, err);
+    } finally {
+      session.isLoading = false;
+      await this.updateFrameCache(session);
+    }
+
+    return session;
+  }
+
+  /**
    * Get cached frame instantly without blocking
    */
   static async captureFrame(sessionId: string): Promise<string | null> {
     const session = sessions.get(sessionId);
     if (!session || session.page.isClosed() || !session.currentUrl) return null;
-    if (session.cachedFrame) return session.cachedFrame;
     return await this.updateFrameCache(session);
   }
 

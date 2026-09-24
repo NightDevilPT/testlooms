@@ -91,15 +91,18 @@ Core identity table. Every other table's `createdBy`/`updatedBy`/`deletedBy` ref
 
 ---
 
-### Table: `refresh_tokens`
+### Table: `refresh_tokens` (User Auth Sessions)
 
-Manages long-lived JWT refresh sessions so users don't have to re-login constantly.
+Manages active user authentication sessions. Stores both `accessToken` and `refreshToken` JWT tokens directly in DB. Only the `access_token` is returned in the HTTP-only cookie. When the access token expires or is revoked, the server looks up the session via `accessToken`, validates the associated `refreshToken`, and updates the existing session row in-place with new access and refresh tokens.
 
-| Column      | Type           | Constraints                                          | What it's for                                                                          |
-| :---------- | :------------- | :--------------------------------------------------- | :------------------------------------------------------------------------------------- |
-| `userId`    | `UUID`         | `NOT NULL`, `REFERENCES users(id) ON DELETE CASCADE` | Which user this session belongs to. Cascades on user deletion.                         |
-| `tokenHash` | `VARCHAR(255)` | `NOT NULL`, `UNIQUE`                                 | Hashed refresh token (never store the raw token) — used to verify and rotate sessions. |
-| `expiresAt` | `TIMESTAMPTZ`  | `NOT NULL`                                           | When this refresh token stops being valid, forcing re-authentication.                  |
+| Column                | Type           | Constraints                                          | What it's for                                                                                                                        |
+| :-------------------- | :------------- | :--------------------------------------------------- | :----------------------------------------------------------------------------------------------------------------------------------- |
+| `userId`              | `UUID`         | `NOT NULL`, `REFERENCES users(id) ON DELETE CASCADE` | Which user this session belongs to. Cascades on user deletion.                                                                       |
+| `accessToken`         | `TEXT`         | `NOT NULL`, `UNIQUE`, `INDEX`                        | Access token JWT stored directly in DB — used to locate active session record when access token is revoked/expired.                   |
+| `refreshToken`        | `TEXT`         | `NOT NULL`, `UNIQUE`                                 | Refresh token JWT stored directly in DB — verified upon token refresh to confirm session validity.                                   |
+| `accessTokenExpiresAt`| `TIMESTAMPTZ`  | `NULLABLE`                                           | Expiration timestamp for access token (e.g. 12 minutes).                                                                             |
+| `expiresAt`           | `TIMESTAMPTZ`  | `NOT NULL`                                           | Expiration timestamp for refresh token (e.g. 15 days).                                                                               |
+| `revokedAt`           | `TIMESTAMPTZ`  | `NULLABLE`                                           | Revocation timestamp marker. `NULL` = active session; timestamp set when revoked.                                                    |
 
 **Sample JSON:**
 
@@ -107,8 +110,11 @@ Manages long-lived JWT refresh sessions so users don't have to re-login constant
 {
 	"id": "rt222222-e89b-12d3-a456-426614174001",
 	"userId": "u1111111-e89b-12d3-a456-426614174000",
-	"tokenHash": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+	"accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1MTExMTExMSIsImlhdCI6MTc1ODE3OTIwMH0...",
+	"refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ1MTExMTExMSIsImlhdCI6MTc1ODE3OTIwMH0...",
+	"accessTokenExpiresAt": "2026-09-18T10:12:00.000Z",
 	"expiresAt": "2026-10-18T10:00:00.000Z",
+	"revokedAt": null,
 	"createdAt": "2026-09-18T10:00:00.000Z",
 	"createdBy": "u1111111-e89b-12d3-a456-426614174000",
 	"updatedAt": "2026-09-18T10:00:00.000Z",

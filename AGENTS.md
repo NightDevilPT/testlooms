@@ -44,6 +44,7 @@ testloom/
 │   ├── page.tsx
 │   └── globals.css
 ├── components/
+│   ├── context/                       → React Context Providers (AuthContext, etc.)
 │   ├── ui/                            → Immutable Shadcn / Base-UI primitives
 │   ├── shared/                        → Reusable cross-page components
 │   └── pages/<page-name>/_components/ → Page-exclusive components
@@ -118,9 +119,11 @@ testloom/
 ### 1.2 Shared Global Components — `components/shared/` (REUSABLE)
 
 - Place any component used across **more than one page**: theme switchers, modal wrappers, layout shells, empty states, confirmation dialogs, etc.
-- Examples: `theme-toggle.tsx` (`ThemeToggle`), `color-toggle.tsx` (`ColorToggle`).
+- Examples: `theme-toggle.tsx` (`ThemeToggle`), `color-toggle.tsx` (`ColorToggle`), `playwright-studio/playwright-studio.tsx` (`PlaywrightStudio`).
 - Must be strictly typed (no `any`), accessible (correct ARIA roles/labels), and reactive to light/dark theme and accent color changes.
 - Naming: kebab-case filename, PascalCase export (`theme-toggle.tsx` → `ThemeToggle`).
+- **NO BARREL INDEX FILES (`index.ts`):** Never create `index.ts` barrel re-export files in shared component directories. Import components directly from their explicit file path (e.g. `import { PlaywrightStudio } from "@/components/shared/playwright-studio/playwright-studio"`).
+- **NO DUPLICATE PAGES:** Public/demo pages must have a single canonical location (e.g. `app/(public)/page.tsx`). Do not create duplicate page routes or alias pages.
 - **Every new file added to `components/shared/` must be listed in §11.2 (Shared Components Registry) in the same change set** — do not add a shared component without registering it.
 
 ### 1.3 Page-Specific Components — `components/pages/<page-name>/_components/` (LOCAL)
@@ -146,20 +149,30 @@ testloom/
 
 Semantic tokens guarantee every component reacts correctly to light/dark mode and active accent theme without per-component overrides.
 
+### 1.5 Icons Rule — Lucide Icons Only
+
+- **Never write raw `<svg>` tags directly in component code, page files, or primitives.**
+- **Always import icons from `lucide-react`** (e.g., `import { Globe, Shield, KeyRound, Zap, Loader2 } from "lucide-react"`).
+- Pass standard sizing utilities (`h-4 w-4`, `h-5 w-5`) and semantic theme color classes (`text-muted-foreground`, `text-primary`, `text-foreground`).
+
 ---
 
 ## 2. Backend Service Layer Rules — `lib/<service-name>/`
 
-Every feature service and integration follows a **strict two-file pattern**:
+Every feature service and integration follows a **strict structured pattern**:
 
 ```
 lib/<service-name>/
 ├── types.ts                    → All interfaces, payload models, unions, enums for this service
+├── validation.ts               → All Zod validation schemas for this service (when input validation is required)
 └── <service-name>.service.ts   → All logic — static or instance methods, one exported service class/object
 ```
 
 **Rules:**
 
+- **Types (`types.ts`)**: Contains all TypeScript interfaces, request/response DTO types, enums, and JWT payload interfaces.
+- **Validation (`validation.ts`)**: Contains all Zod validation schemas. **Crucial Rule**: Every Zod schema defined in `validation.ts` MUST be shared and reused in **both frontend forms** (e.g. `@hookform/resolvers/zod` with React Hook Form) and **backend API route handlers** (zod `.parse()` validation) to guarantee 100% consistent validation across client and server.
+- **Service (`<service-name>.service.ts`)**: Contains pure business logic and database queries.
 - **No loose utility files** inside a service directory. If a helper is only used by one service, it lives inside that service's `.service.ts` file (private function) or `types.ts` (shared type). If it's used across multiple services, it belongs in `lib/utils.ts`.
 - **No business logic outside `lib/`.** Route handlers, page components, and shared components must call into a service — never re-implement query logic, validation, or Playwright orchestration inline.
 - Service file names match the folder: `lib/playwright-service/playwright.service.ts` exports the primary automation service class.
@@ -170,7 +183,8 @@ lib/<service-name>/
 
 | Service                      | Responsibility                                                                                                   |
 | :--------------------------- | :--------------------------------------------------------------------------------------------------------------- |
-| `lib/response-service/`       | Standard API response envelopes (`ok`, `paginated`, `fail`), `AppError` exception class & `handleError` strategy |
+| `lib/response-service/`       | Standard API response envelopes (`ok`, `paginated`, `fail`), `HttpStatus`/`ErrorCode` enums & `handleError` strategy |
+| `lib/api-client/`            | Client-side HTTP fetch service wrapper (`get`, `post`, `put`, `patch`, `delete`) with cookie credentials & response envelope typing |
 | `lib/auth-service/`          | Sign up, login, refresh token issuance/rotation, invite token validation                                         |
 | `lib/organizations-service/` | Organization creation, membership, role assignment/invites                                                       |
 | `lib/projects-service/`      | Project CRUD, environment profiles, integration packages                                                         |
@@ -182,6 +196,15 @@ lib/<service-name>/
 | `lib/idempotency-service/`   | Request deduplication checking, key locking, response caching, lock release, and expired record purging         |
 
 **Do not duplicate permission logic anywhere else.** Every route handler or server action that needs a role check calls `rbac-service`, never re-derives it from `organization_members.role` directly.
+
+### 2.2 Auth & Session Token Management Rules (`lib/auth-service/`)
+
+- **Single Cookie Rule**: Upon login, signup, or OTP verification, return **ONLY `access_token`** in the HTTP-only cookie. Never set `refresh_token` in client cookies.
+- **Direct JWT Token Storage**: Store both `accessToken` and `refreshToken` JWT strings directly in the `refresh_tokens` database table (indexed by `accessToken`).
+- **Access-Token-Based Session Lookup**: When an access token is expired or revoked (or upon calling `/api/auth/refresh`), query `refresh_tokens` by `accessToken` to locate the user's active session.
+- **Refresh Token Validation & In-Place Rotation**: Check if the associated `refreshToken` in DB is valid (`expiresAt > now` and `revokedAt IS NULL`).
+  - If invalid / expired / revoked: Return `HTTP 401 Unauthorized` (`code: "UNAUTHORIZED_SESSION_EXPIRED"`), requiring re-login.
+  - If valid: Generate new `accessToken` & `refreshToken`, **update the current user's existing DB session row in-place** (`accessToken`, `refreshToken`, `accessTokenExpiresAt`, `expiresAt`, `updatedAt`), and set the new `access_token` in cookie (do NOT insert a new DB row).
 
 **Every new service folder added under `lib/` must be added to the table above (§2.1) in the same change set, including which `app/api/` routes consume it — see §11.4 (Lib Services Registry).**
 
@@ -279,6 +302,19 @@ All API responses use one consistent envelope so client-side error handling, pag
 - **Single Standard Signature**: Every middleware wrapper uses the signature `middlewareName(handler, options?)`.
 - **Full Next.js Signature Support**: Middlewares receive `(request: NextRequest | Request, context?: { params?: Promise<T> | T })` supporting dynamic route parameters seamlessly.
 
+### 3.6 Mandatory Rate Limiting Rule
+
+- **Every API Route Handler MUST be Rate-Limited**: Wrap every route handler export in `app/api/**/route.ts` with `rateLimitMiddleware` from `@/middleware/rate-limit/rate-limit.middleware`.
+- **Rate Limit Tiers**:
+  - Auth & Sensitive (`signup`, `login`): 10 requests per 60s window (`{ maxRequests: 10, windowSeconds: 60 }`).
+  - Standard Writes (`POST`, `PATCH`, `DELETE`): 60 requests per 60s window (`{ maxRequests: 60, windowSeconds: 60 }`).
+  - Read Operations (`GET`): 300 requests per 60s window (`{ maxRequests: 300, windowSeconds: 60 }`).
+
+### 3.7 Idempotency & Middleware Verification Rule
+
+- **Idempotency for Mutating Routes**: Every route marked `Yes (key)` in `docs/Api.md` (e.g., `signup`, `create project`, `execute scenario`, `upload file`) MUST be wrapped with `idempotencyMiddleware` from `@/middleware/idempotency/idempotency.middleware`.
+- **Middleware Composition & Verification**: Before creating or updating any API route handler (especially `POST`, `PATCH`, `DELETE` mutating operations), verify the exact set of required middlewares (`rateLimitMiddleware`, `idempotencyMiddleware`, `rbacMiddleware`) specified in `docs/Api.md` and compose them onto the handler.
+
 ---
 
 ## 4. Data & Database Rules
@@ -334,6 +370,15 @@ These rules encode the behavior described in `docs/Architecture.md` §5–6 — 
 - On a successful fallback, mark the step result `HEALED`, log `healedSelector` + `healedPriority`, and **update `test_steps.primaryKey`** to the working key so subsequent runs skip the cascade. This write-back must happen inside `playwright-service`, transactionally with the step result log.
 - Never skip the cascade order or short-circuit to "any working selector" — the priority order is deliberate (stability over convenience).
 
+### 6.4 Playwright Studio Browser Recording & Replay Engine Rules
+
+- **Native Separate Chromium Window**: Interactive recording runs in a real separate Chromium browser window (`headless: false`) launched via `chromium.launch({ headless: false })`. Never use iframe overlays or client-side canvas image interception for DOM recording.
+- **Server-Injected DOM Listeners**: DOM user interactions inside the Chromium window are captured via server-exposed functions (`__testloom_on_click__`, `__testloom_on_change__`, `__testloom_on_scroll__`) and injected init scripts (`page.addInitScript`).
+- **Cucumber Gherkin Step Formatting**: Action steps are formatted using standard Gherkin phrasing (`Given I navigate to...`, `When I click on...`, `And I type...`, `And I scroll...`, `Then browser session was closed`).
+- **Real-Time Browser Window Lifecycle Tracking**: Event listeners for `page.on('close')`, `context.on('close')`, and `browser.on('disconnected')` update `session.isClosed = true` and broadcast `status: "COMPLETED"` over SSE to reflect window closure in real-time.
+- **Automated Replay Completion & Cleanup**: `PlaywrightService.replaySession` executes recorded steps sequentially with a 700ms human delay. Once all steps complete, it automatically closes the Chromium browser window (`session.browser.close()`), logs completion, and transitions status to `COMPLETED`.
+- **Vertical Action Timeline UI**: `StudioActionTimeline` displays recorded steps in a vertical timeline layout with continuous connecting guide lines, anchored icon nodes, Gherkin keyword badges (`GIVEN`, `WHEN`, `AND`, `THEN`), timestamp badges, and scrollable locator breakdown panels.
+
 ---
 
 ## 7. Naming Conventions
@@ -378,12 +423,17 @@ When `shadcn add <component>` introduces a new file into `components/ui/`, add a
 
 Every file in `components/shared/` must appear here:
 
-| File               | Export        | Used By (pages) | Purpose                |
-| :----------------- | :------------ | :-------------- | :--------------------- |
-| `theme-toggle.tsx` | `ThemeToggle` | Global (layout) | Light/dark mode switch |
-| `color-toggle.tsx` | `ColorToggle` | Global (layout) | Accent color switch    |
-| `app-sidebar.tsx`  | `AppSidebar`  | Dashboard       | Main navigation sidebar|
-| `app-header.tsx`   | `AppHeader`   | Dashboard       | Main top header bar    |
+| File                                             | Export                 | Used By (pages)                 | Purpose                                                 |
+| :----------------------------------------------- | :--------------------- | :------------------------------ | :------------------------------------------------------ |
+| `theme-toggle.tsx`                               | `ThemeToggle`          | Global (layout)                 | Light/dark mode switch                                  |
+| `color-toggle.tsx`                               | `ColorToggle`          | Global (layout)                 | Accent color switch                                     |
+| `app-sidebar.tsx`                                | `AppSidebar`           | Dashboard                       | Main navigation sidebar                                 |
+| `app-header.tsx`                                 | `AppHeader`            | Dashboard                       | Main top header bar                                     |
+| `playwright-studio/playwright-studio.tsx`       | `PlaywrightStudio`     | Public (`app/(public)/page.tsx`)| Master interactive Playwright browser studio container  |
+| `playwright-studio/studio-control-bar.tsx`       | `StudioControlBar`     | Internal to PlaywrightStudio    | Studio control bar (URL, record, pause, stop, replay)   |
+| `playwright-studio/studio-canvas-player.tsx`     | `StudioCanvasPlayer`   | Internal to PlaywrightStudio    | SSE live browser frame player with click capture        |
+| `playwright-studio/studio-action-timeline.tsx`   | `StudioActionTimeline` | Internal to PlaywrightStudio    | Live recorded step inspector timeline                   |
+| `playwright-studio/studio-code-exporter.tsx`     | `StudioCodeExporter`   | Internal to PlaywrightStudio    | Multi-framework automated test code exporter modal      |
 
 _(Add a row every time a new shared component is created. Remove the row if the component is deleted.)_
 
@@ -391,9 +441,10 @@ _(Add a row every time a new shared component is created. Remove the row if the 
 
 Every folder under `components/pages/` must appear here:
 
-| Page         | Component File | Export | Purpose |
-| :----------- | :------------- | :----- | :------ |
-| _(none yet)_ |                |        |         |
+| Page    | Component File   | Export       | Purpose                                        |
+| :------ | :--------------- | :----------- | :--------------------------------------------- |
+| `login` | `login/index.tsx` | `LoginForm`  | Card grid login form with auth context integration |
+| `signup`| `signup/index.tsx`| `SignupForm` | Card grid signup form with auth context integration |
 
 _(Add a row every time a new page-specific component is created. Group rows by page for readability.)_
 

@@ -43,6 +43,11 @@ export interface ActionLog {
   details?: string;
   selector?: string;
   selectors?: SmartSelectors;
+  xpath?: string;
+  elementId?: string;
+  className?: string;
+  tagName?: string;
+  innerText?: string;
   value?: string;
   filePaths?: string[];
   expectedValue?: string;
@@ -57,8 +62,10 @@ export interface PlaywrightSession {
   context: BrowserContext;
   page: Page;
   currentUrl: string;
+  initialUrl?: string;
   pageTitle: string;
   isLoading: boolean;
+  isClosed?: boolean;
   viewport: { width: number; height: number };
   latestClickedElement: ClickedElementInfo | null;
   actionLogs: ActionLog[];

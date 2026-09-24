@@ -1,13 +1,14 @@
 // TestLoom User & Authentication Models
 
 model User {
-  id              String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  email           String   @unique
-  passwordHash    String
-  name            String
+  id              String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  email           String     @unique
+  password        String?
+  firstName       String
+  lastName        String
   avatarUrl       String?
-  isEmailVerified Boolean  @default(false)
-  status          String   @default("ACTIVE")
+  isVerified      Boolean    @default(false)
+  status          UserStatus @default(ACTIVE)
 
   // Mandatory Audit & Soft-Delete Fields
   createdAt DateTime  @default(now()) @db.Timestamptz
@@ -19,6 +20,7 @@ model User {
 
   // Domain Relations
   refreshTokens       RefreshToken[]
+  otpVerifications    OtpVerification[]
   organizationMembers OrganizationMember[]
   invitedMembers      OrgInvite[]          @relation("InvitedByUser")
   personalProjects    Project[]
@@ -28,12 +30,13 @@ model User {
 }
 
 model RefreshToken {
-  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId          String    @db.Uuid
-  tokenHash       String    @unique
-  expiresAt       DateTime  @db.Timestamptz
-  revokedAt       DateTime? @db.Timestamptz
-  replacedByToken String?
+  id                   String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId               String    @db.Uuid
+  accessToken          String    @unique @db.Text
+  refreshToken         String    @unique @db.Text
+  accessTokenExpiresAt DateTime? @db.Timestamptz
+  expiresAt            DateTime  @db.Timestamptz
+  revokedAt            DateTime? @db.Timestamptz
 
   // Mandatory Audit & Soft-Delete Fields
   createdAt DateTime  @default(now()) @db.Timestamptz
@@ -47,5 +50,32 @@ model RefreshToken {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+  @@index([accessToken])
   @@map("refresh_tokens")
+}
+
+model OtpVerification {
+  id         String     @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId     String?    @db.Uuid
+  email      String
+  otpHash    String
+  purpose    OtpPurpose @default(LOGIN)
+  attempts   Int        @default(0)
+  expiresAt  DateTime   @db.Timestamptz
+  verifiedAt DateTime?  @db.Timestamptz
+
+  // Mandatory Audit & Soft-Delete Fields
+  createdAt DateTime  @default(now()) @db.Timestamptz
+  createdBy String?   @db.Uuid
+  updatedAt DateTime  @default(now()) @updatedAt @db.Timestamptz
+  updatedBy String?   @db.Uuid
+  deletedAt DateTime? @db.Timestamptz
+  deletedBy String?   @db.Uuid
+
+  // Relations
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([email])
+  @@map("otp_verifications")
 }

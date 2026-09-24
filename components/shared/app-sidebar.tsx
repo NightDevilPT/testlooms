@@ -11,11 +11,12 @@ import {
   History,
   Settings,
   Users,
-  Sparkles,
+  Bug,
   ChevronsUpDown,
+  LogOut,
 } from "lucide-react";
 
-import { cn } from "@/lib/utils";
+import { useAuth } from "@/components/context/auth-context";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   Sidebar,
@@ -57,14 +58,25 @@ interface AppSidebarProps {
 
 export function AppSidebar({
   currentOrg = null,
-  currentUser = {
-    name: "Pawan Kumar",
-    email: "pawan@example.com",
-    role: "ADMIN",
-  },
+  currentUser,
 }: AppSidebarProps) {
   const pathname = usePathname();
   const { isMobile } = useSidebar();
+  const { user: authUser, logout } = useAuth();
+
+  const displayName = authUser
+    ? [authUser.firstName, authUser.lastName].filter(Boolean).join(" ") || authUser.email
+    : currentUser?.name || "User Account";
+
+  const displayEmail = authUser?.email || currentUser?.email || "";
+  const displayAvatar = authUser?.avatarUrl || currentUser?.avatarUrl;
+
+  const initials = displayName
+    .split(" ")
+    .map((part) => part[0])
+    .join("")
+    .toUpperCase()
+    .slice(0, 2) || "TL";
 
   const isOrgUser = Boolean(currentOrg);
 
@@ -101,15 +113,13 @@ export function AppSidebar({
     },
   ];
 
-  const orgNavItems = isOrgUser
-    ? [
-        {
-          title: "Team Members",
-          href: "/dashboard/members",
-          icon: Users,
-        },
-      ]
-    : [];
+  const orgNavItems = [
+    {
+      title: "Team Members",
+      href: "/dashboard/members",
+      icon: Users,
+    },
+  ];
 
   return (
     <Sidebar collapsible="icon">
@@ -124,7 +134,7 @@ export function AppSidebar({
               render={<Link href="/dashboard" />}
             >
               <div className="flex aspect-square size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-                <Sparkles className="size-4" />
+                <Bug className="size-4" />
               </div>
               <div className="grid flex-1 text-left text-sm leading-tight">
                 <span className="truncate font-semibold">TestLoom</span>
@@ -137,7 +147,7 @@ export function AppSidebar({
         </SidebarMenu>
       </SidebarHeader>
 
-    <Separator />
+      <Separator />
 
       {/* Content — Main Navigation Groups */}
       <SidebarContent>
@@ -149,22 +159,18 @@ export function AppSidebar({
                 const isActive =
                   item.href === "/dashboard"
                     ? pathname === "/dashboard"
-                    : pathname === item.href ||
-                      pathname.startsWith(`${item.href}/`);
-                const Icon = item.icon;
+                    : pathname.startsWith(item.href);
 
                 return (
                   <SidebarMenuItem key={item.href}>
                     <SidebarMenuButton
                       isActive={isActive}
                       tooltip={item.title}
-                      render={
-                        <Link href={item.href}>
-                          <Icon className={cn(isActive && "text-primary")} />
-                          <span>{item.title}</span>
-                        </Link>
-                      }
-                    />
+                      render={<Link href={item.href} />}
+                    >
+                      <item.icon className="size-4" />
+                      <span>{item.title}</span>
+                    </SidebarMenuButton>
                   </SidebarMenuItem>
                 );
               })}
@@ -172,31 +178,24 @@ export function AppSidebar({
           </SidebarGroupContent>
         </SidebarGroup>
 
-        {isOrgUser && orgNavItems.length > 0 && (
+        {isOrgUser && (
           <SidebarGroup>
             <SidebarGroupLabel>Organization</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
                 {orgNavItems.map((item) => {
-                  const isActive =
-                    item.href === "/dashboard"
-                      ? pathname === "/dashboard"
-                      : pathname === item.href ||
-                        pathname.startsWith(`${item.href}/`);
-                  const Icon = item.icon;
+                  const isActive = pathname.startsWith(item.href);
 
                   return (
                     <SidebarMenuItem key={item.href}>
                       <SidebarMenuButton
                         isActive={isActive}
                         tooltip={item.title}
-                        render={
-                          <Link href={item.href}>
-                            <Icon className={cn(isActive && "text-primary")} />
-                            <span>{item.title}</span>
-                          </Link>
-                        }
-                      />
+                        render={<Link href={item.href} />}
+                      >
+                        <item.icon className="size-4" />
+                        <span>{item.title}</span>
+                      </SidebarMenuButton>
                     </SidebarMenuItem>
                   );
                 })}
@@ -213,24 +212,19 @@ export function AppSidebar({
             <DropdownMenu>
               <DropdownMenuTrigger
                 render={
-                  <SidebarMenuButton size="lg" tooltip={currentUser.name} />
+                  <SidebarMenuButton size="lg" tooltip={displayName} />
                 }
               >
                 <Avatar className="h-8 w-8 rounded-lg">
-                  <AvatarImage
-                    src={currentUser.avatarUrl}
-                    alt={currentUser.name}
-                  />
+                  <AvatarImage src={displayAvatar} alt={displayName} />
                   <AvatarFallback className="rounded-lg bg-primary/10 text-xs font-semibold text-primary">
-                    PK
+                    {initials}
                   </AvatarFallback>
                 </Avatar>
                 <div className="grid flex-1 text-left text-sm leading-tight">
-                  <span className="truncate font-semibold">
-                    {currentUser.name}
-                  </span>
+                  <span className="truncate font-semibold">{displayName}</span>
                   <span className="truncate text-xs text-muted-foreground">
-                    {currentUser.email}
+                    {displayEmail}
                   </span>
                 </div>
                 <ChevronsUpDown className="ml-auto size-4" />
@@ -245,20 +239,15 @@ export function AppSidebar({
                   <DropdownMenuLabel className="p-0 font-normal">
                     <div className="flex items-center gap-2 px-1 py-1.5 text-left text-sm">
                       <Avatar className="h-8 w-8 rounded-lg">
-                        <AvatarImage
-                          src={currentUser.avatarUrl}
-                          alt={currentUser.name}
-                        />
+                        <AvatarImage src={displayAvatar} alt={displayName} />
                         <AvatarFallback className="rounded-lg bg-primary/10 text-xs font-semibold text-primary">
-                          PK
+                          {initials}
                         </AvatarFallback>
                       </Avatar>
                       <div className="grid flex-1 text-left text-sm leading-tight">
-                        <span className="truncate font-semibold">
-                          {currentUser.name}
-                        </span>
+                        <span className="truncate font-semibold">{displayName}</span>
                         <span className="truncate text-xs text-muted-foreground">
-                          {currentUser.email}
+                          {displayEmail}
                         </span>
                       </div>
                     </div>
@@ -271,6 +260,14 @@ export function AppSidebar({
                 >
                   <Settings className="size-4" />
                   <span>Account Settings</span>
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  className="gap-2 font-medium text-destructive cursor-pointer focus:bg-destructive/10 focus:text-destructive"
+                  onClick={() => logout()}
+                >
+                  <LogOut className="size-4" />
+                  <span>Log out</span>
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

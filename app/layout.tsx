@@ -20,7 +20,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       className={`${inter.variable} h-full antialiased`}
       suppressHydrationWarning
     >
-      <body className="min-h-full flex flex-col bg-background text-foreground font-sans">
+      <body className="bg-background text-foreground font-sans w-full min-h-full overflow-hidden">
         <RootProviders>{children}</RootProviders>
       </body>
     </html>

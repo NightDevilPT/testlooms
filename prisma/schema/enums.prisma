@@ -6,6 +6,19 @@ enum UserRole {
   VIEWER
 }
 
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  PENDING_VERIFICATION
+}
+
+enum OtpPurpose {
+  LOGIN
+  EMAIL_VERIFICATION
+  PASSWORD_RESET
+}
+
 enum OwnershipType {
   PERSONAL
   COMPANY
