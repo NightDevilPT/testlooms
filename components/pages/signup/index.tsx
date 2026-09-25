@@ -180,16 +180,16 @@ export function SignupForm({
 					</form>
 
 					{/* Right Side Prominent Logo Visual Panel */}
-					<div className="relative hidden md:flex flex-col justify-between p-10 overflow-hidden bg-gradient-to-br from-primary/10 via-muted/30 to-background border-l border-border">
+					<div className="relative hidden md:flex flex-col justify-between p-10 overflow-hidden bg-muted/30 border-l border-border">
 						{/* Ambient Background Radial Glow Effects */}
-						<div className="absolute -right-20 -top-20 h-72 w-72 rounded-full bg-primary/15 blur-3xl pointer-events-none" />
-						<div className="absolute -left-20 -bottom-20 h-72 w-72 rounded-full bg-primary/10 blur-3xl pointer-events-none" />
+						<div className="absolute -right-20 -top-20 h-72 w-72 rounded-full bg-primary/5 blur-3xl pointer-events-none" />
+						<div className="absolute -left-20 -bottom-20 h-72 w-72 rounded-full bg-primary/5 blur-3xl pointer-events-none" />
 
 						{/* Large Centered Logo Hero Graphic */}
 						<div className="relative z-10 my-auto flex flex-col items-center justify-center text-center p-6 space-y-6">
 							<div className="relative flex items-center justify-center">
 								<div className="absolute inset-0 rounded-3xl bg-primary/20 blur-xl animate-pulse" />
-								<div className="relative h-28 w-28 rounded-3xl bg-gradient-to-tr from-primary via-primary/90 to-primary/70 flex items-center justify-center text-primary-foreground shadow-2xl shadow-primary/30 border border-primary-foreground/20">
+								<div className="relative h-28 w-28 rounded-3xl bg-primary flex items-center justify-center text-primary-foreground shadow-2xl shadow-primary/30 border border-primary-foreground/20">
 									<Bug className="h-14 w-14" />
 								</div>
 							</div>

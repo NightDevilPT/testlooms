@@ -9,7 +9,7 @@ import {
   UserProfileResponse,
   JwtPayload,
 } from "./types";
-import { SignupInput, LoginInput } from "./validation";
+import { SignupInput, LoginInput, SetupWorkspaceInput } from "./validation";
 
 const JWT_SECRET = process.env.JWT_SECRET || "testloom_jwt_secret_dev_key_2026";
 const ACCESS_TOKEN_EXPIRATION = "12m"; // 12 minutes
@@ -75,7 +75,7 @@ export class AuthService {
   // ==========================================
 
   /**
-   * Register a new user and create an active session
+   * Register a new user profile without issuing active session
    */
   public static async signup(input: SignupInput, request?: Request): Promise<NextResponse> {
     try {
@@ -100,6 +100,8 @@ export class AuthService {
           password: hashedPassword,
           status: "ACTIVE",
           isVerified: false,
+          accountType: "PENDING",
+          hasCompletedOnboarding: false,
         },
       });
 
@@ -111,6 +113,9 @@ export class AuthService {
         avatarUrl: user.avatarUrl,
         isVerified: user.isVerified,
         status: user.status,
+        accountType: user.accountType,
+        hasCompletedOnboarding: user.hasCompletedOnboarding,
+        organizations: [],
         createdAt: user.createdAt.toISOString(),
       };
 
@@ -162,6 +167,11 @@ export class AuthService {
 
       await this.setAuthCookie(tokens.accessToken);
 
+      const userMemberships = await prisma.organizationMember.findMany({
+        where: { userId: user.id, deletedAt: null },
+        include: { organization: true },
+      });
+
       const userProfile: UserProfileResponse = {
         id: user.id,
         email: user.email,
@@ -170,6 +180,14 @@ export class AuthService {
         avatarUrl: user.avatarUrl,
         isVerified: user.isVerified,
         status: user.status,
+        accountType: user.accountType,
+        hasCompletedOnboarding: user.hasCompletedOnboarding,
+        organizations: userMemberships.map((m) => ({
+          id: m.organization.id,
+          name: m.organization.name,
+          slug: m.organization.slug,
+          role: m.role,
+        })),
         createdAt: user.createdAt.toISOString(),
       };
 
@@ -241,6 +259,11 @@ export class AuthService {
         return ResponseService.notFound("User profile not found.", request);
       }
 
+      const userMemberships = await prisma.organizationMember.findMany({
+        where: { userId: user.id, deletedAt: null },
+        include: { organization: true },
+      });
+
       const userProfile: UserProfileResponse = {
         id: user.id,
         email: user.email,
@@ -249,10 +272,124 @@ export class AuthService {
         avatarUrl: user.avatarUrl,
         isVerified: user.isVerified,
         status: user.status,
+        accountType: user.accountType,
+        hasCompletedOnboarding: user.hasCompletedOnboarding,
+        organizations: userMemberships.map((m) => ({
+          id: m.organization.id,
+          name: m.organization.name,
+          slug: m.organization.slug,
+          role: m.role,
+        })),
         createdAt: user.createdAt.toISOString(),
       };
 
       return ResponseService.ok(userProfile, undefined, request);
+    } catch (error: unknown) {
+      return ResponseService.handleError(error, request);
+    }
+  }
+
+  /**
+   * Complete workspace setup during onboarding (Personal or Organization choice)
+   */
+  public static async setupWorkspace(
+    userId: string,
+    input: SetupWorkspaceInput,
+    request?: Request
+  ): Promise<NextResponse> {
+    try {
+      const user = await prisma.user.findFirst({
+        where: { id: userId, deletedAt: null },
+      });
+
+      if (!user) {
+        return ResponseService.notFound("User not found.", request);
+      }
+
+      if (input.accountType === "PERSONAL") {
+        const updatedUser = await prisma.user.update({
+          where: { id: userId },
+          data: {
+            accountType: "PERSONAL",
+            hasCompletedOnboarding: true,
+          },
+        });
+
+        const userProfile: UserProfileResponse = {
+          id: updatedUser.id,
+          email: updatedUser.email,
+          firstName: updatedUser.firstName,
+          lastName: updatedUser.lastName,
+          avatarUrl: updatedUser.avatarUrl,
+          isVerified: updatedUser.isVerified,
+          status: updatedUser.status,
+          accountType: updatedUser.accountType,
+          hasCompletedOnboarding: updatedUser.hasCompletedOnboarding,
+          organizations: [],
+          createdAt: updatedUser.createdAt.toISOString(),
+        };
+
+        return ResponseService.ok(userProfile, undefined, request);
+      } else {
+        const existingOrg = await prisma.organization.findUnique({
+          where: { slug: input.organization.slug },
+        });
+
+        if (existingOrg) {
+          return ResponseService.conflict(
+            "An organization with this URL slug already exists. Please choose a different slug.",
+            request
+          );
+        }
+
+        const org = await prisma.organization.create({
+          data: {
+            name: input.organization.name,
+            slug: input.organization.slug,
+            createdBy: userId,
+          },
+        });
+
+        await prisma.organizationMember.create({
+          data: {
+            organizationId: org.id,
+            userId: userId,
+            role: "ADMIN",
+            createdBy: userId,
+          },
+        });
+
+        const updatedUser = await prisma.user.update({
+          where: { id: userId },
+          data: {
+            accountType: "ORGANIZATION",
+            hasCompletedOnboarding: true,
+          },
+        });
+
+        const userProfile: UserProfileResponse = {
+          id: updatedUser.id,
+          email: updatedUser.email,
+          firstName: updatedUser.firstName,
+          lastName: updatedUser.lastName,
+          avatarUrl: updatedUser.avatarUrl,
+          isVerified: updatedUser.isVerified,
+          status: updatedUser.status,
+          accountType: updatedUser.accountType,
+          hasCompletedOnboarding: updatedUser.hasCompletedOnboarding,
+          organizations: [
+            {
+              id: org.id,
+              name: org.name,
+              slug: org.slug,
+              role: "ADMIN",
+            },
+          ],
+          createdAt: updatedUser.createdAt.toISOString(),
+        };
+
+        return ResponseService.ok(userProfile, undefined, request);
+      }
     } catch (error: unknown) {
       return ResponseService.handleError(error, request);
     }

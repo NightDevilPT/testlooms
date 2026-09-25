@@ -155,6 +155,11 @@ Semantic tokens guarantee every component reacts correctly to light/dark mode an
 - **Always import icons from `lucide-react`** (e.g., `import { Globe, Shield, KeyRound, Zap, Loader2 } from "lucide-react"`).
 - Pass standard sizing utilities (`h-4 w-4`, `h-5 w-5`) and semantic theme color classes (`text-muted-foreground`, `text-primary`, `text-foreground`).
 
+### 1.6 No Gradient Colors Rule
+
+- **Never use CSS gradient colors (`bg-gradient-*`, `from-*`, `via-*`, `to-*`) in component code, cards, headers, or page layouts.**
+- Use clean, flat solid semantic color tokens (`bg-background`, `bg-card`, `bg-muted`, `bg-accent`, `bg-primary`, `border-border`, `text-foreground`) for all UI surfaces to maintain high contrast, professional accessibility, and flat modern theme consistency across light and dark modes.
+
 ---
 
 ## 2. Backend Service Layer Rules — `lib/<service-name>/`
@@ -434,6 +439,7 @@ Every file in `components/shared/` must appear here:
 | `playwright-studio/studio-canvas-player.tsx`     | `StudioCanvasPlayer`   | Internal to PlaywrightStudio    | SSE live browser frame player with click capture        |
 | `playwright-studio/studio-action-timeline.tsx`   | `StudioActionTimeline` | Internal to PlaywrightStudio    | Live recorded step inspector timeline                   |
 | `playwright-studio/studio-code-exporter.tsx`     | `StudioCodeExporter`   | Internal to PlaywrightStudio    | Multi-framework automated test code exporter modal      |
+| `onboarding-modal.tsx`                            | `OnboardingModal`      | Global (`RootProviders`)        | Non-dismissible account type & workspace setup modal    |
 
 _(Add a row every time a new shared component is created. Remove the row if the component is deleted.)_
 
@@ -443,8 +449,9 @@ Every folder under `components/pages/` must appear here:
 
 | Page    | Component File   | Export       | Purpose                                        |
 | :------ | :--------------- | :----------- | :--------------------------------------------- |
-| `login` | `login/index.tsx` | `LoginForm`  | Card grid login form with auth context integration |
-| `signup`| `signup/index.tsx`| `SignupForm` | Card grid signup form with auth context integration |
+| `login`       | `login/index.tsx`        | `LoginForm`                | Card grid login form with auth context integration |
+| `signup`      | `signup/index.tsx`       | `SignupForm`               | Card grid signup form with auth context integration |
+| `organization`| `organization/index.tsx` | `OrganizationPageComponent` | Team organization details, member roles, & admin edits |
 
 _(Add a row every time a new page-specific component is created. Group rows by page for readability.)_
 

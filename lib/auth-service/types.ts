@@ -17,6 +17,14 @@ export interface UserProfileResponse {
   avatarUrl: string | null;
   isVerified: boolean;
   status: string;
+  accountType: "PENDING" | "PERSONAL" | "ORGANIZATION";
+  hasCompletedOnboarding: boolean;
+  organizations?: Array<{
+    id: string;
+    name: string;
+    slug: string;
+    role: string;
+  }>;
   createdAt: string;
 }
 

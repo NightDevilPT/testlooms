@@ -14,7 +14,7 @@ import {
 	UserProfileResponse,
 	AuthSessionResult,
 } from "@/lib/auth-service/types";
-import { LoginInput, SignupInput } from "@/lib/auth-service/validation";
+import { LoginInput, SignupInput, SetupWorkspaceInput } from "@/lib/auth-service/validation";
 
 export interface AuthContextType {
 	user: UserProfileResponse | null;
@@ -26,13 +26,16 @@ export interface AuthContextType {
 	signup: (
 		data: SignupInput,
 	) => Promise<{ success: boolean; error?: string }>;
+	setupWorkspace: (
+		data: SetupWorkspaceInput,
+	) => Promise<{ success: boolean; error?: string }>;
 	logout: () => Promise<void>;
 	refetchUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const PUBLIC_ROUTES = ["/", "/auth/login", "/auth/signup"];
+const PUBLIC_ROUTES = ["/login", "/signup", "/", "/auth/login", "/auth/signup"];
 
 export function AuthProvider({ children }: { children: ReactNode }) {
 	const [user, setUser] = useState<UserProfileResponse | null>(null);
@@ -48,8 +51,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 	const refetchUser = useCallback(async () => {
 		setIsLoading(true);
 		try {
-			const response =
-				await apiClient.get<UserProfileResponse>("/api/auth/me");
+			const response = await apiClient.get<UserProfileResponse>(
+				"/api/auth/me",
+			);
 
 			if (
 				response.success &&
@@ -170,6 +174,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 	};
 
 	/**
+	 * Workspace Setup action handler (Personal or Organization setup)
+	 */
+	const setupWorkspace = async (
+		data: SetupWorkspaceInput,
+	): Promise<{ success: boolean; error?: string }> => {
+		setIsLoading(true);
+		try {
+			const response = await apiClient.post<UserProfileResponse>(
+				"/api/auth/setup-workspace",
+				data,
+			);
+
+			if (response.success && response.data && !Array.isArray(response.data)) {
+				setUser(response.data);
+				setIsAuthenticated(true);
+				router.push("/dashboard");
+				return { success: true };
+			}
+
+			const errorMessage =
+				response.success === false
+					? response.error.message
+					: "Workspace setup failed";
+			return { success: false, error: errorMessage };
+		} catch {
+			return {
+				success: false,
+				error: "An unexpected error occurred during workspace setup.",
+			};
+		} finally {
+			setIsLoading(false);
+		}
+	};
+
+	/**
 	 * Logout action handler
 	 */
 	const logout = async (): Promise<void> => {
@@ -192,6 +231,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 				isLoading,
 				login,
 				signup,
+				setupWorkspace,
 				logout,
 				refetchUser,
 			}}

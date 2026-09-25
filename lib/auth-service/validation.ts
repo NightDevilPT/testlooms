@@ -25,3 +25,23 @@ export const loginSchema = z.object({
 });
 
 export type LoginInput = z.infer<typeof loginSchema>;
+
+export const setupWorkspaceSchema = z.discriminatedUnion("accountType", [
+  z.object({
+    accountType: z.literal("PERSONAL"),
+  }),
+  z.object({
+    accountType: z.literal("ORGANIZATION"),
+    organization: z.object({
+      name: z.string().trim().min(2, "Organization name must be at least 2 characters").max(100, "Max 100 characters"),
+      slug: z
+        .string()
+        .trim()
+        .min(2, "Slug must be at least 2 characters")
+        .max(50, "Max 50 characters")
+        .regex(/^[a-z0-9-]+$/, "Slug can only contain lowercase letters, numbers, and hyphens"),
+    }),
+  }),
+]);
+
+export type SetupWorkspaceInput = z.infer<typeof setupWorkspaceSchema>;

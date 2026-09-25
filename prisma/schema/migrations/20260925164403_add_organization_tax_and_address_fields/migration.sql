@@ -1,0 +1,15 @@
+-- AlterTable
+ALTER TABLE "organizations" ADD COLUMN     "addressLine1" TEXT,
+ADD COLUMN     "addressLine2" TEXT,
+ADD COLUMN     "cin" TEXT,
+ADD COLUMN     "city" TEXT,
+ADD COLUMN     "companySize" TEXT,
+ADD COLUMN     "contactEmail" TEXT,
+ADD COLUMN     "contactPhone" TEXT,
+ADD COLUMN     "country" TEXT,
+ADD COLUMN     "gstin" TEXT,
+ADD COLUMN     "industry" TEXT,
+ADD COLUMN     "pan" TEXT,
+ADD COLUMN     "postalCode" TEXT,
+ADD COLUMN     "state" TEXT,
+ADD COLUMN     "website" TEXT;

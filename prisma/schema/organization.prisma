@@ -7,6 +7,26 @@ model Organization {
   logoUrl String?
   plan    String  @default("FREE")
 
+  // Enterprise Compliance & Tax Registrations
+  gstin String?
+  pan   String?
+  cin   String?
+
+  // Official Registered Address Details
+  addressLine1 String?
+  addressLine2 String?
+  city         String?
+  state        String?
+  postalCode   String?
+  country      String?
+
+  // Company Overview & Contact Details
+  website      String?
+  contactEmail String?
+  contactPhone String?
+  industry     String?
+  companySize  String?
+
   // Mandatory Audit & Soft-Delete Fields
   createdAt DateTime  @default(now()) @db.Timestamptz
   createdBy String?   @db.Uuid

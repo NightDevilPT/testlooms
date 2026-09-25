@@ -1,4 +1,5 @@
 import { UserRole } from "@prisma/client";
+import prisma from "@/lib/db/prisma";
 import {
   PermissionDefinition,
   PermissionKey,
@@ -17,6 +18,27 @@ export class RbacService {
   static {
     // Initialize default core domain permissions into registry
     this.registerDefaults();
+  }
+
+  /**
+   * Look up a user's role inside a specific organization
+   */
+  public static async getUserRoleInOrganization(
+    userId: string,
+    organizationId: string
+  ): Promise<UserRole | null> {
+    try {
+      const member = await prisma.organizationMember.findFirst({
+        where: {
+          organizationId,
+          userId,
+          deletedAt: null,
+        },
+      });
+      return member ? member.role : null;
+    } catch {
+      return null;
+    }
   }
 
   /**

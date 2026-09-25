@@ -2,6 +2,7 @@ import * as React from "react";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/shared/app-sidebar";
 import { AppHeader } from "@/components/shared/app-header";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 export default function ProtectedLayout({
   children,
@@ -11,11 +12,11 @@ export default function ProtectedLayout({
   return (
     <SidebarProvider defaultOpen>
       <AppSidebar />
-      <SidebarInset>
+      <SidebarInset className="grid grid-rows-[64px_1fr] h-screen">
         <AppHeader />
-        <main className="flex-1 p-6 overflow-y-auto bg-background">
+        <ScrollArea className=" p-6 bg-background h-full overflow-auto">
           {children}
-        </main>
+        </ScrollArea>
       </SidebarInset>
     </SidebarProvider>
   );

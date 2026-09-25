@@ -3,7 +3,8 @@
 import * as React from "react";
 import { ThemeProvider } from "@/components/context/theme-context";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import AuthProvider from "../context/auth-context";
+import AuthProvider from "@/components/context/auth-context";
+import { OnboardingModal } from "@/components/shared/onboarding-modal";
 
 export interface RootProvidersProps {
 	children: React.ReactNode;
@@ -17,7 +18,10 @@ export function RootProviders({ children }: RootProvidersProps) {
 	return (
 		<ThemeProvider defaultColor="default" defaultMode="dark">
 			<TooltipProvider>
-				<AuthProvider>{children}</AuthProvider>
+				<AuthProvider>
+					{children}
+					<OnboardingModal />
+				</AuthProvider>
 			</TooltipProvider>
 		</ThemeProvider>
 	);

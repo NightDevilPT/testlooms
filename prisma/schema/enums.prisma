@@ -13,6 +13,12 @@ enum UserStatus {
   PENDING_VERIFICATION
 }
 
+enum AccountType {
+  PENDING
+  PERSONAL
+  ORGANIZATION
+}
+
 enum OtpPurpose {
   LOGIN
   EMAIL_VERIFICATION

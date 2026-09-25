@@ -7,8 +7,10 @@ model User {
   firstName       String
   lastName        String
   avatarUrl       String?
-  isVerified      Boolean    @default(false)
-  status          UserStatus @default(ACTIVE)
+  isVerified             Boolean     @default(false)
+  status                 UserStatus  @default(ACTIVE)
+  accountType            AccountType @default(PENDING)
+  hasCompletedOnboarding Boolean     @default(false)
 
   // Mandatory Audit & Soft-Delete Fields
   createdAt DateTime  @default(now()) @db.Timestamptz
