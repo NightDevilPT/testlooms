@@ -68,6 +68,11 @@ testloom/
 
 **Rule:** Any new top-level folder outside this structure requires a documented reason in this file before use. Do not invent new organizational patterns ad hoc.
 
+### 0.1 Route Layout & Context Wrapping Rule
+
+- **Dedicated `layout.tsx` Per Page Route**: Every route segment under `app/(protected)/dashboard/` (e.g. `projects`, `organization`, `members`, `settings`, `scenarios`, `workflows`, `executions`) MUST provide its own `layout.tsx` file containing page-specific `metadata`.
+- **Feature Context Wrapping in Layout**: If a page feature uses a dedicated React Context Provider (e.g., `ProjectsProvider`), `layout.tsx` MUST wrap `{children}` with that Context Provider so all child pages and sub-routes seamlessly inherit the provider at the route layout level.
+
 ---
 
 ## 1. Component Architecture Rules
@@ -162,6 +167,10 @@ Semantic tokens guarantee every component reacts correctly to light/dark mode an
 - **Never use CSS gradient colors (`bg-gradient-*`, `from-*`, `via-*`, `to-*`) in component code, cards, headers, or page layouts.**
 - Use clean, flat solid semantic color tokens (`bg-background`, `bg-card`, `bg-muted`, `bg-accent`, `bg-primary`, `border-border`, `text-foreground`) for all UI surfaces to maintain high contrast, professional accessibility, and flat modern theme consistency across light and dark modes.
 
+### 1.7 Dialog ScrollArea Rule
+
+- **Always use `ScrollArea` component in Dialogs**: Every Create, Edit, or multi-field Dialog Modal MUST wrap its scrollable form/content using the Shadcn `ScrollArea` component (`import { ScrollArea } from "@/components/ui/scroll-area"`) inside `DialogContent`. Never use raw browser `overflow-y-auto` scrollbars on `DialogContent`.
+
 ---
 
 ## 2. Backend Service Layer Rules — `lib/<service-name>/`
@@ -222,6 +231,10 @@ lib/<service-name>/
 - **Isomorphic Logger**: Always import and use `logger` from `@/lib/logger-service/logger.service` (`logger.info(...)`, `logger.warn(...)`, `logger.error(...)`, `logger.debug(...)`).
 - **No Icons / Emojis**: Log messages MUST remain clean, professional, and standard. **Do NOT include any icons, emojis, or decorative characters in log strings.**
 - **Automatic Sensitive Data Masking**: All sensitive fields (`password`, `pass`, `token`, `secret`, `authorization`, `emailPassword`, `cookie`, `session`, `bearer`, etc.) are automatically sanitized and masked with `[REDACTED]` by `LoggerService` across all log payloads.
+
+### 2.4 Prisma Schema & Migration Rules
+
+- **Mandatory Migration Command Rule**: Whenever modifying `prisma/schema/*.prisma` files, always run the database migration and client generation commands (`npx prisma migrate dev` or `npx prisma db push` followed by `npx prisma generate`) to ensure the PostgreSQL database schema and generated TypeScript Prisma Client types remain 100% in sync.
 
 **Every new service folder added under `lib/` must be added to the table above (§2.1) in the same change set, including which `app/api/` routes consume it — see §11.4 (Lib Services Registry).**
 
@@ -480,6 +493,17 @@ Every folder under `components/pages/` must appear here:
 | `accept-invite` | `accept-invite/_components/accept-invite-skeleton.tsx` | `AcceptInviteSkeleton` | Skeleton loader during invite validation |
 | `dashboard` | `dashboard/index.tsx` | `DashboardPageComponent` | Dashboard telemetry metrics, Shadcn charts, & recent executions |
 | `dashboard` | `dashboard/_components/dashboard-skeleton.tsx` | `DashboardSkeleton` | Page skeleton loader during metrics fetch |
+| `projects` | `projects/index.tsx` | `ProjectsPageContent` | Projects page layout, search/ownership filter, & state orchestrator |
+| `projects` | `projects/_components/projects-skeleton.tsx` | `ProjectsSkeleton` | Page skeleton loader during projects fetch |
+| `projects` | `projects/_components/project-card.tsx` | `ProjectCard` | Interactive project card displaying URL, browser parameters, & actions |
+| `projects` | `projects/_components/create-project-dialog.tsx` | `CreateProjectDialog` | Modal dialog for creating projects with time-based timeout & ping test |
+| `projects` | `projects/_components/edit-project-dialog.tsx` | `EditProjectDialog` | Modal dialog for editing project settings with time-based timeout |
+| `projects` | `projects/_components/delete-project-dialog.tsx` | `DeleteProjectDialog` | Soft-delete confirmation alert dialog for projects |
+| `project-details` | `project-details/index.tsx` | `ProjectDetailsPageComponent` | Project workspace dashboard, metrics, scenarios list, & CTAs |
+| `project-details` | `project-details/_components/project-details-skeleton.tsx` | `ProjectDetailsSkeleton` | Skeleton loader during project details fetch |
+| `project-details` | `project-details/_components/add-variable-dialog.tsx` | `AddVariableDialog` | Modal for adding Vercel-style environment variables with duplicate key check & ScrollArea |
+| `project-details` | `project-details/_components/edit-variable-dialog.tsx` | `EditVariableDialog` | Modal for editing individual environment variables with key collision validation |
+| `project-details` | `project-details/_components/delete-variable-dialog.tsx` | `DeleteVariableDialog` | Confirmation modal for deleting environment variable keys |
 
 _(Add a row every time a new page-specific component is created. Group rows by page for readability.)_
 
@@ -492,6 +516,7 @@ This expands on §2.1 — every folder under `lib/` must appear here, including 
 | `lib/utils.ts`            | `utils.ts`                          | —                                   | Global (`cn()` helper)             |
 | `lib/api-client/`         | `types.ts`, `validation.ts`, `api-client.service.ts` | Frontend Client HTTP API Calls | React Components / Hooks |
 | `lib/auth-service/`      | `types.ts`, `validation.ts`, `auth.service.ts`       | `/api/auth/*`                       | Auth Forms / Client Pages |
+| `lib/projects-service/`   | `types.ts`, `validation.ts`, `projects.service.ts` | `/api/projects`, `/api/projects/[id]`, `/api/projects/ping`, `/api/projects/[id]/env-profiles` | `ProjectsContext`, `projects/index.tsx`, `project-details/index.tsx` |
 | `lib/playwright-service/` | `types.ts`, `playwright.service.ts` | _(to be added as routes are built)_ | Studio workspace, execution runner |
 
 _(Add a row every time a new `lib/<service-name>/` folder is created. Keep the "Consumed By" columns current as routes/components start calling the service — stale entries should be removed during review.)_

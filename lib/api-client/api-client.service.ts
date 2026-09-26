@@ -3,6 +3,8 @@ import {
   SingleResourceSuccessEnvelope,
   PaginatedListSuccessEnvelope,
   FailureEnvelope,
+  HttpStatus,
+  ErrorCode,
 } from "@/lib/response-service/types";
 import { RequestOptions, ApiClientConfig } from "./types";
 
@@ -19,12 +21,14 @@ export class ApiClientService {
   }
 
   /**
-   * Helper to build final URL with query parameters
+   * Helper to build final URL with query parameters.
+   * Guarantees a leading slash on endpoints when relative.
    */
   private buildUrl(endpoint: string, params?: RequestOptions["params"]): string {
+    const normalizedEndpoint = endpoint.startsWith("/") ? endpoint : `/${endpoint}`;
     const fullUrl = this.baseUrl
-      ? `${this.baseUrl.replace(/\/$/, "")}/${endpoint.replace(/^\//, "")}`
-      : endpoint;
+      ? `${this.baseUrl.replace(/\/$/, "")}${normalizedEndpoint}`
+      : normalizedEndpoint;
 
     if (!params) return fullUrl;
 
@@ -40,7 +44,8 @@ export class ApiClientService {
   }
 
   /**
-   * Core fetch execution method with credentials include (HTTP-only cookies)
+   * Core fetch execution method with credentials include (HTTP-only cookies).
+   * Safely handles non-JSON (e.g. HTML 404/500) responses.
    */
   private async request<T>(
     endpoint: string,
@@ -75,8 +80,57 @@ export class ApiClientService {
       config.body = isFormData ? (body as FormData) : JSON.stringify(body);
     }
 
-    const response = await fetch(url, config);
-    return (await response.json()) as T;
+    try {
+      const response = await fetch(url, config);
+      const contentType = response.headers.get("content-type") || "";
+
+      if (contentType.includes("application/json")) {
+        return (await response.json()) as T;
+      }
+
+      // Safe fallback for HTML (404/500) or non-JSON responses
+      const textResponse = await response.text();
+      const failureObj: FailureEnvelope = {
+        success: false,
+        statusCode: response.status || HttpStatus.INTERNAL_SERVER_ERROR,
+        data: null,
+        pagination: null,
+        error: {
+          code: response.status === 404 ? ErrorCode.NOT_FOUND : ErrorCode.INTERNAL_SERVER_ERROR,
+          message:
+            response.status === 404
+              ? `API endpoint not found: ${url}`
+              : `Server returned non-JSON status ${response.status}`,
+          details: textResponse.substring(0, 300),
+        },
+        meta: {
+          responseTimeMs: 0,
+          startedAt: new Date().toISOString(),
+          endedAt: new Date().toISOString(),
+        },
+      };
+
+      return failureObj as unknown as T;
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : "Network error";
+      const failureObj: FailureEnvelope = {
+        success: false,
+        statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+        data: null,
+        pagination: null,
+        error: {
+          code: ErrorCode.INTERNAL_SERVER_ERROR,
+          message: errorMessage,
+        },
+        meta: {
+          responseTimeMs: 0,
+          startedAt: new Date().toISOString(),
+          endedAt: new Date().toISOString(),
+        },
+      };
+
+      return failureObj as unknown as T;
+    }
   }
 
   // ==========================================

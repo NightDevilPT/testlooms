@@ -12,6 +12,7 @@ model Project {
   defaultViewportWidth  Int           @default(1280)
   defaultViewportHeight Int           @default(800)
   headless              Boolean       @default(true)
+  timeoutMs             Int           @default(30000)
 
   // Mandatory Audit & Soft-Delete Fields
   createdAt DateTime  @default(now()) @db.Timestamptz
