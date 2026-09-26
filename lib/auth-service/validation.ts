@@ -76,3 +76,12 @@ export const setupWorkspaceSchema = z.discriminatedUnion("accountType", [
 ]);
 
 export type SetupWorkspaceInput = z.infer<typeof setupWorkspaceSchema>;
+
+export const updateProfileSchema = z.object({
+  firstName: z.string().trim().min(1, "First name is required").max(50, "First name max 50 characters").optional(),
+  lastName: z.string().trim().min(1, "Last name is required").max(50, "Last name max 50 characters").optional(),
+  avatarUrl: z.string().trim().nullable().optional(),
+});
+
+export type UpdateProfileInput = z.infer<typeof updateProfileSchema>;
+

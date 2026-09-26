@@ -22,18 +22,28 @@ This document is the authoritative list of every API endpoint in TestLoom, which
 
 ## 2. Full API Catalog
 
+> [!NOTE]
+> **Implementation Summary (20 Active Endpoints Live & Verified)**
+> - **Authentication & Onboarding (11/11 Completed)**: `signup`, `login`, `logout`, `logout-all`, `me`, `request-otp`, `verify-email`, `verify-otp-login`, `setup-workspace`, `invite-details`, `accept-invite`.
+> - **Organizations & Membership (7/10 Completed)**: `current` (GET & PATCH), `members` (GET & POST), `members/:memberId` (PATCH & DELETE), `members/:memberId/resend` (POST).
+> - **Dashboard Telemetry (1/1 Completed)**: `stats` (GET).
+> - **System Health (1/1 Completed)**: `health` (GET).
+
 ### 2.1 Authentication & Sessions
 
-| Method | Path                    | Auth                   | Role | Idempotent?   | Status     | Notes                                                                                                                                                   |
-| :----- | :---------------------- | :--------------------- | :--- | :------------ | :--------- | :------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| POST   | `/api/auth/signup`      | Public                 | —    | Yes (key)     | ✅ Done     | **Primary.** Registers new user (`firstName`, `lastName`, `email`, `password`). Stores session in DB; issues `access_token` HTTP-only cookie.          |
-| POST   | `/api/auth/login`       | Public                 | —    | Yes (natural) | ✅ Done     | **Primary.** Authenticates user (`email` + `password`). Stores session in DB; issues `access_token` HTTP-only cookie.                                  |
-| POST   | `/api/auth/logout`      | Required               | Any  | Yes (natural) | ✅ Done     | **Primary.** Revokes session record in DB & clears `access_token` HTTP-only cookie.                                                                     |
-| POST   | `/api/auth/logout-all`  | Required               | Any  | Yes (natural) | ✅ Done     | **Primary.** Revokes all active session records for user & clears cookies.                                                                              |
-| GET    | `/api/auth/me`          | Required               | Any  | Yes (natural) | ✅ Done     | **Primary.** Returns profile of currently authenticated user (`id`, `email`, `firstName`, `lastName`, `status`).                                       |
-| POST   | `/api/auth/request-otp` | Public                 | —    | No            | ⏳ Reserved | *(Future / Reserved)* Generates 6-digit OTP code for passwordless login.                                                                                |
-| POST   | `/api/auth/verify-otp`  | Public                 | —    | Yes (natural) | ⏳ Reserved | *(Future / Reserved)* Verifies OTP code from `otp_verifications`.                                                                                       |
-| POST   | `/api/auth/resend-otp`  | Public                 | —    | No            | ⏳ Reserved | *(Future / Reserved)* Cooldown-gated OTP re-issuance.                                                                                                   |
+| Method | Path                         | Auth     | Role | Idempotent?   | Status  | Notes                                                                                                                                              |
+| :----- | :--------------------------- | :------- | :--- | :------------ | :------ | :------------------------------------------------------------------------------------------------------------------------------------------------- |
+| POST   | `/api/auth/signup`           | Public   | —    | Yes (key)     | ✅ Done | **Primary.** Registers new user (`firstName`, `lastName`, `email`, `password`, optional `inviteToken`). Stores session in DB; issues HTTP cookie. |
+| POST   | `/api/auth/login`            | Public   | —    | Yes (natural) | ✅ Done | **Primary.** Authenticates user (`email` + `password`, optional `inviteToken`). Stores session in DB; issues `access_token` HTTP-only cookie.     |
+| POST   | `/api/auth/logout`           | Required | Any  | Yes (natural) | ✅ Done | **Primary.** Revokes active session record in DB & clears `access_token` HTTP-only cookie.                                                        |
+| POST   | `/api/auth/logout-all`       | Required | Any  | Yes (natural) | ✅ Done | **Primary.** Revokes all active session records for user & clears cookies.                                                                         |
+| GET    | `/api/auth/me`               | Required | Any  | Yes (natural) | ✅ Done | **Primary.** Returns profile of currently authenticated user (`id`, `email`, `firstName`, `lastName`, `status`, `organizations`).                |
+| POST   | `/api/auth/request-otp`      | Public   | —    | No            | ✅ Done | Generates 6-digit OTP code for passwordless login or email verification & dispatches email via Gmail SMTP.                                         |
+| POST   | `/api/auth/verify-email`     | Public   | —    | Yes (natural) | ✅ Done | Verifies 6-digit email verification OTP code and updates user `isVerified = true`.                                                                 |
+| POST   | `/api/auth/verify-otp-login` | Public   | —    | Yes (natural) | ✅ Done | Authenticates user with 6-digit OTP passcode & optional `inviteToken`.                                                                             |
+| POST   | `/api/auth/setup-workspace`  | Required | Any  | Yes (key)     | ✅ Done | Onboarding workspace setup (choice of `PERSONAL` or `ORGANIZATION` workspace creation).                                                             |
+| GET    | `/api/auth/invite-details`   | Public   | —    | Yes (natural) | ✅ Done | **NEW.** Validates invitation token, checks user existence, and returns recipient name, email, & organization details.                             |
+| POST   | `/api/auth/accept-invite`    | Required | Any  | Yes (natural) | ✅ Done | **NEW.** Accepts team invitation token for logged-in user and joins organization.                                                                  |
 
 #### 2.1.1 Authentication & OTP Detailed Specifications
 
@@ -173,6 +183,66 @@ This document is the authoritative list of every API endpoint in TestLoom, which
 ##### 7. `GET /api/auth/me`
 - Returns profile of currently authenticated user (`id`, `email`, `firstName`, `lastName`, `isEmailVerified`, `status`).
 
+##### 8. `GET /api/auth/invite-details` (Validate Team Invitation Token) — **NEW**
+- **Headers**: None (Public)
+- **Query Parameters**: `token` (string, required) — The invitation token from the email link.
+- **Execution Flow**:
+  - Validates `token` in `org_invites` table.
+  - Ensures invitation is unexpired (`expiresAt > now`) and pending (`acceptedAt IS NULL`).
+  - Checks whether recipient `email` already exists in `users` table (`userExists: boolean`).
+- **Success Response (`HTTP 200 OK`)**:
+  ```json
+  {
+    "success": true,
+    "statusCode": 200,
+    "data": {
+      "id": "inv_550e8400-e29b-41d4-a716-446655440000",
+      "email": "sarah.connor@example.com",
+      "firstName": "Sarah",
+      "lastName": "Connor",
+      "role": "QA_ENGINEER",
+      "organizationId": "org_789",
+      "organizationName": "Acme Test Labs",
+      "expiresAt": "2026-10-03T16:00:00.000Z",
+      "userExists": false
+    },
+    "pagination": null,
+    "meta": {
+      "responseTimeMs": 14,
+      "startedAt": "2026-09-26T16:00:00.000Z",
+      "endedAt": "2026-09-26T16:00:00.014Z"
+    }
+  }
+  ```
+
+##### 9. `POST /api/auth/accept-invite` (Accept Team Invitation) — **NEW**
+- **Headers**: `Content-Type: application/json`, Cookie: `access_token`
+- **Request Payload**:
+  ```json
+  {
+    "token": "inv_sec_8f9a2b7c4d..."
+  }
+  ```
+- **Execution Flow**:
+  - Authenticates user session via `access_token` cookie.
+  - Validates `token` in `org_invites`.
+  - Links user to `organization_members` with assigned `role`.
+  - Sets `acceptedAt = now` on invitation row and updates user active organization.
+- **Success Response (`HTTP 200 OK`)**:
+  ```json
+  {
+    "success": true,
+    "statusCode": 200,
+    "data": {
+      "message": "Invitation accepted successfully.",
+      "organizationId": "org_789",
+      "role": "QA_ENGINEER"
+    },
+    "pagination": null,
+    "meta": { ... }
+  }
+  ```
+
 ### 2.2 User Profile
 
 | Method | Path                   | Auth     | Role | Idempotent?   | Status     | Notes                                                                             |
@@ -183,22 +253,179 @@ This document is the authoritative list of every API endpoint in TestLoom, which
 
 ### 2.3 Organizations & Membership
 
-| Method | Path                                       | Auth     | Role         | Idempotent?   | Notes                                                                                                                                              |
-| :----- | :----------------------------------------- | :------- | :----------- | :------------ | :------------------------------------------------------------------------------------------------------------------------------------------------- |
-| POST   | `/api/organizations`                       | Required | Any          | Yes (key)     | Must not create duplicate orgs on retry.                                                                                                           |
-| GET    | `/api/organizations`                       | Required | Any          | Yes (natural) |                                                                                                                                                    |
-| GET    | `/api/organizations/:id`                   | Required | Any (member) | Yes (natural) |                                                                                                                                                    |
-| PATCH  | `/api/organizations/:id`                   | Required | Admin        | Yes (natural) |                                                                                                                                                    |
-| DELETE | `/api/organizations/:id`                   | Required | Admin        | Yes (natural) |                                                                                                                                                    |
-| POST   | `/api/organizations/:id/invite`            | Required | Admin        | Yes (key)     | **Must** be idempotent — a retried invite request must not send two invite emails or create duplicate pending members for the same `invitedEmail`. |
-| GET    | `/api/organizations/:id/invites`           | Required | Admin        | Yes (natural) |                                                                                                                                                    |
-| DELETE | `/api/organizations/:id/invites/:inviteId` | Required | Admin        | Yes (natural) |                                                                                                                                                    |
-| POST   | `/api/invites/:token/accept`               | Required | Any          | Yes (natural) | Token is single-use by design; accepting twice is a no-op after the first success.                                                                 |
-| POST   | `/api/invites/:token/decline`              | Required | Any          | Yes (natural) |                                                                                                                                                    |
-| GET    | `/api/organizations/:id/members`           | Required | Any (member) | Yes (natural) | Paginated.                                                                                                                                         |
-| PATCH  | `/api/organizations/:id/members/:memberId` | Required | Admin        | Yes (natural) |                                                                                                                                                    |
-| DELETE | `/api/organizations/:id/members/:memberId` | Required | Admin        | Yes (natural) |                                                                                                                                                    |
-| POST   | `/api/organizations/:id/leave`             | Required | Any (member) | Yes (natural) |                                                                                                                                                    |
+| Method | Path                                         | Auth     | Role         | Idempotent?   | Status  | Notes                                                                                                                                           |
+| :----- | :------------------------------------------- | :------- | :----------- | :------------ | :------ | :---------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/organizations/current`                 | Required | Any (member) | Yes (natural) | ✅ Done | Fetches current org details, active member count, project count, user role, and tax IDs (GSTIN/PAN/CIN).                                       |
+| PATCH  | `/api/organizations/current`                 | Required | Admin        | Yes (natural) | ✅ Done | Updates current organization profile details, slug, tax IDs (GSTIN/PAN/CIN), contact preferences, and address.                                 |
+| GET    | `/api/organizations/members`                 | Required | Any (member) | Yes (natural) | ✅ Done | Paginated fetch of active members & pending invites with server-side search query, `status` filter (`ACTIVE`/`PENDING`), and `role` filter.   |
+| POST   | `/api/organizations/members`                 | Required | Admin        | Yes (key)     | ✅ Done | Invites a new member (`email`, `role`, optional `firstName`, `lastName`). Creates pending `OrgInvite`, pre-fills link params, & sends email.    |
+| PATCH  | `/api/organizations/members/:memberId`       | Required | Admin        | Yes (natural) | ✅ Done | Updates permission role (`ADMIN`, `QA_ENGINEER`, `VIEWER`) for an existing member.                                                              |
+| DELETE | `/api/organizations/members/:memberId`       | Required | Admin        | Yes (natural) | ✅ Done | Soft-deletes an active organization member or revokes a pending invitation record.                                                              |
+| POST   | `/api/organizations/members/:memberId/resend` | Required | Admin        | Yes (key)     | ✅ Done | **NEW.** Resends email invitation link for a pending invite record.                                                                             |
+| POST   | `/api/organizations`                         | Required | Any          | Yes (key)     | ⏳ Pending | Reserved for multi-organization creation.                                                                                                       |
+| GET    | `/api/organizations`                         | Required | Any          | Yes (natural) | ⏳ Pending | List all organizations user belongs to.                                                                                                         |
+| DELETE | `/api/organizations/:id`                     | Required | Admin        | Yes (natural) | ⏳ Pending | Soft-deletes organization entity.                                                                                                               |
+
+#### 2.3.1 Organizations & Member Management Detailed Specifications
+
+##### 1. `GET /api/organizations/current` (Fetch Current Organization Details)
+- **Headers**: Cookie: `access_token`
+- **Execution Flow**:
+  - Fetches organization details for currently active organization of authenticated user.
+  - Includes active member count, project count, user role, and organization tax registration identifiers (`gstin`, `pan`, `cin`).
+- **Success Response (`HTTP 200 OK`)**:
+  ```json
+  {
+    "success": true,
+    "statusCode": 200,
+    "data": {
+      "id": "org_550e8400-e29b-41d4-a716-446655440000",
+      "name": "Acme Test Labs",
+      "slug": "acme-test-labs",
+      "logoUrl": null,
+      "gstin": "27AAACA123411Z5",
+      "pan": "AAACA1234A",
+      "cin": "U12345MH2024PTC123456",
+      "contactEmail": "admin@acme.com",
+      "contactPhone": "+91-9876543210",
+      "billingAddress": "123 Tech Park, Mumbai",
+      "userRole": "ADMIN",
+      "activeMemberCount": 8,
+      "projectCount": 4,
+      "createdAt": "2026-01-15T10:00:00.000Z"
+    },
+    "pagination": null,
+    "meta": { ... }
+  }
+  ```
+
+##### 2. `PATCH /api/organizations/current` (Update Organization Profile)
+- **Headers**: `Content-Type: application/json`, Cookie: `access_token`
+- **Permission**: Required `ADMIN` role
+- **Request Payload**:
+  ```json
+  {
+    "name": "Acme Test Labs Inc",
+    "slug": "acme-test-labs-inc",
+    "gstin": "27AAACA123411Z5",
+    "pan": "AAACA1234A",
+    "cin": "U12345MH2024PTC123456",
+    "contactEmail": "admin@acme.com",
+    "contactPhone": "+91-9876543210",
+    "billingAddress": "123 Tech Park, Suite 400, Mumbai"
+  }
+  ```
+- **Success Response (`HTTP 200 OK`)**: Returns updated organization profile.
+
+##### 3. `GET /api/organizations/members` (List Organization Members & Invites)
+- **Headers**: Cookie: `access_token`
+- **Query Parameters**:
+  - `search` / `q` (string, optional) — Filter members by first name, last name, or email.
+  - `status` (string, optional) — `ACTIVE` or `PENDING`.
+  - `role` (string, optional) — `ADMIN`, `QA_ENGINEER`, or `VIEWER`.
+  - `page` (number, default 1), `pageSize` (number, default 10).
+- **Success Response (`HTTP 200 OK`)**:
+  ```json
+  {
+    "success": true,
+    "statusCode": 200,
+    "data": [
+      {
+        "id": "mem_101",
+        "userId": "usr_99",
+        "email": "sarah.connor@example.com",
+        "firstName": "Sarah",
+        "lastName": "Connor",
+        "role": "QA_ENGINEER",
+        "status": "ACTIVE",
+        "joinedAt": "2026-09-24T14:30:00.000Z"
+      }
+    ],
+    "pagination": {
+      "page": 1,
+      "pageSize": 10,
+      "totalItems": 1,
+      "totalPages": 1,
+      "hasNext": false,
+      "hasPrevious": false
+    },
+    "meta": { ... }
+  }
+  ```
+
+##### 4. `POST /api/organizations/members` (Invite New Team Member)
+- **Headers**: `Content-Type: application/json`, `Idempotency-Key` (Optional), Cookie: `access_token`
+- **Permission**: Required `ADMIN` role
+- **Request Payload**:
+  ```json
+  {
+    "email": "alex.rider@example.com",
+    "firstName": "Alex",
+    "lastName": "Rider",
+    "role": "QA_ENGINEER"
+  }
+  ```
+- **Execution Flow**:
+  - Validates email is not already an active member of organization.
+  - Creates or updates `org_invites` record containing `firstName`, `lastName`, `email`, `role`, and secure token (`expiresAt = now + 7 days`).
+  - Dispatches invitation email with custom invite link via `MailService`.
+- **Success Response (`HTTP 201 Created`)**:
+  ```json
+  {
+    "success": true,
+    "statusCode": 201,
+    "data": {
+      "id": "inv_550e8400-e29b-41d4-a716-446655440000",
+      "email": "alex.rider@example.com",
+      "firstName": "Alex",
+      "lastName": "Rider",
+      "role": "QA_ENGINEER",
+      "status": "PENDING",
+      "expiresAt": "2026-10-03T16:00:00.000Z"
+    },
+    "pagination": null,
+    "meta": { ... }
+  }
+  ```
+
+##### 5. `PATCH /api/organizations/members/:memberId` (Update Member Role)
+- **Headers**: `Content-Type: application/json`, Cookie: `access_token`
+- **Permission**: Required `ADMIN` role
+- **Request Payload**:
+  ```json
+  {
+    "role": "ADMIN"
+  }
+  ```
+- **Success Response (`HTTP 200 OK`)**: Returns updated member entity with new role.
+
+##### 6. `DELETE /api/organizations/members/:memberId` (Remove Member / Revoke Invite)
+- **Headers**: Cookie: `access_token`
+- **Permission**: Required `ADMIN` role
+- **Execution Flow**:
+  - If `memberId` represents an active member, removes `organization_members` record.
+  - If `memberId` represents a pending invite, deletes `org_invites` record.
+- **Success Response (`HTTP 200 OK`)**: Returns success message.
+
+##### 7. `POST /api/organizations/members/:memberId/resend` (Resend Invitation Email) — **NEW**
+- **Headers**: Cookie: `access_token`, `Idempotency-Key` (Optional)
+- **Permission**: Required `ADMIN` role
+- **Execution Flow**:
+  - Finds pending invitation record by ID.
+  - Extends invitation expiration timestamp by 7 days.
+  - Re-sends invitation email via `MailService`.
+- **Success Response (`HTTP 200 OK`)**:
+  ```json
+  {
+    "success": true,
+    "statusCode": 200,
+    "data": {
+      "message": "Invitation email resent successfully."
+    },
+    "pagination": null,
+    "meta": { ... }
+  }
+  ```
 
 ### 2.4 Projects
 
@@ -301,13 +528,101 @@ This document is the authoritative list of every API endpoint in TestLoom, which
 | GET    | `/api/exports/:id`           | Required | Any (member) | Yes (natural) |                                                                                                                    |
 | GET    | `/api/exports/:id/download`  | Required | Any (member) | Yes (natural) |                                                                                                                    |
 
-### 2.12 Cross-Cutting
+### 2.12 Dashboard & Telemetry
 
-| Method | Path                          | Auth     | Role | Idempotent?   | Notes                             |
-| :----- | :---------------------------- | :------- | :--- | :------------ | :-------------------------------- |
-| GET    | `/api/health`                 | Public   | —    | Yes (natural) | Liveness/readiness probe.         |
-| GET    | `/api/notifications`          | Required | Any  | Yes (natural) | Paginated.                        |
-| PATCH  | `/api/notifications/:id/read` | Required | Any  | Yes (natural) | Marking as read twice is a no-op. |
+| Method | Path                   | Auth     | Role         | Idempotent?   | Status  | Notes                                                                                                                              |
+| :----- | :--------------------- | :------- | :----------- | :------------ | :------ | :--------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/dashboard/stats` | Required | Any (member) | Yes (natural) | ✅ Done | **NEW.** Computes workspace telemetry KPIs, 7-day execution trends, scenario distributions, top projects, & recent execution logs. |
+
+#### 2.12.1 Dashboard Telemetry Detailed Specifications
+
+##### 1. `GET /api/dashboard/stats` (Fetch Workspace Telemetry & Execution Aggregates) — **NEW**
+- **Headers**: Cookie: `access_token`
+- **Execution Flow**:
+  - Validates user session and determines workspace type (`PERSONAL` vs `ORGANIZATION`).
+  - Aggregates system metrics (total projects, scenarios, workflows, executions, pass rate %, self-healing rate %).
+  - Computes 7-day daily execution trends (`passed`, `failed`, `total`).
+  - Calculates scenario status breakdown (`READY`, `DRAFT`, `DEPRECATED`).
+  - Queries recent execution logs with duration, step metrics, and self-healing stats.
+- **Success Response (`HTTP 200 OK`)**:
+  ```json
+  {
+    "success": true,
+    "statusCode": 200,
+    "data": {
+      "workspaceType": "ORGANIZATION",
+      "organizationName": "Acme Test Labs",
+      "summary": {
+        "totalProjects": 5,
+        "personalProjects": 1,
+        "orgProjects": 4,
+        "totalScenarios": 42,
+        "totalWorkflows": 12,
+        "totalExecutions": 150,
+        "passedExecutions": 138,
+        "failedExecutions": 12,
+        "runningExecutions": 0,
+        "passRatePercentage": 92,
+        "totalStepsExecuted": 1240,
+        "passedSteps": 1200,
+        "failedSteps": 40,
+        "healedSteps": 18,
+        "selfHealingRatePercentage": 45
+      },
+      "dailyTrends": [
+        { "date": "2026-09-20", "passed": 18, "failed": 2, "total": 20 }
+      ],
+      "scenarioDistribution": [
+        { "status": "READY", "label": "Ready for Execution", "count": 35, "percentage": 83.3 }
+      ],
+      "recentExecutions": [
+        {
+          "id": "exec_101",
+          "projectId": "proj_1",
+          "projectName": "E-Commerce Suite",
+          "scenarioId": "scen_50",
+          "scenarioTitle": "Checkout Payment Flow",
+          "workflowId": null,
+          "workflowTitle": null,
+          "triggerType": "MANUAL",
+          "status": "PASSED",
+          "durationMs": 4200,
+          "totalSteps": 8,
+          "passedSteps": 8,
+          "failedSteps": 0,
+          "healedSteps": 1,
+          "startedAt": "2026-09-26T14:00:00.000Z",
+          "completedAt": "2026-09-26T14:00:04.200Z",
+          "createdAt": "2026-09-26T14:00:00.000Z"
+        }
+      ],
+      "topProjects": [
+        {
+          "id": "proj_1",
+          "name": "E-Commerce Suite",
+          "ownershipType": "COMPANY",
+          "scenarioCount": 15,
+          "executionCount": 80,
+          "lastExecutionStatus": "PASSED"
+        }
+      ]
+    },
+    "pagination": null,
+    "meta": {
+      "responseTimeMs": 28,
+      "startedAt": "2026-09-26T16:00:00.000Z",
+      "endedAt": "2026-09-26T16:00:00.028Z"
+    }
+  }
+  ```
+
+### 2.13 Cross-Cutting
+
+| Method | Path                          | Auth     | Role | Idempotent?   | Status     | Notes                             |
+| :----- | :---------------------------- | :------- | :--- | :------------ | :--------- | :-------------------------------- |
+| GET    | `/api/health`                 | Public   | —    | Yes (natural) | ✅ Done    | Liveness/readiness probe.         |
+| GET    | `/api/notifications`          | Required | Any  | Yes (natural) | ⏳ Pending | Paginated.                        |
+| PATCH  | `/api/notifications/:id/read` | Required | Any  | Yes (natural) | ⏳ Pending | Marking as read twice is a no-op. |
 
 ---
 

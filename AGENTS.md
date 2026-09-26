@@ -102,6 +102,7 @@ testloom/
 | `input.tsx`         | `Input`                                                                                                     |
 | `label.tsx`         | `Label`                                                                                                     |
 | `pagination.tsx`    | `Pagination`, `PaginationContent`, `PaginationItem`, etc.                                                   |
+| `popover.tsx`       | `Popover`, `PopoverTrigger`, `PopoverContent`, `PopoverHeader`, `PopoverTitle`, etc.                        |
 | `progress.tsx`      | `Progress`                                                                                                  |
 | `scroll-area.tsx`   | `ScrollArea`, `ScrollBar`                                                                                   |
 | `select.tsx`        | `Select`, `SelectTrigger`, `SelectValue`, `SelectContent`, `SelectItem`                                     |
@@ -482,6 +483,10 @@ Every folder under `components/pages/` must appear here:
 | `accept-invite` | `accept-invite/_components/accept-invite-skeleton.tsx` | `AcceptInviteSkeleton` | Skeleton loader during invite validation |
 | `dashboard` | `dashboard/index.tsx` | `DashboardPageComponent` | Dashboard telemetry metrics, Shadcn charts, & recent executions |
 | `dashboard` | `dashboard/_components/dashboard-skeleton.tsx` | `DashboardSkeleton` | Page skeleton loader during metrics fetch |
+| `settings` | `settings/index.tsx` | `SettingsPageComponent` | Account & visual preferences tabbed settings page orchestrator |
+| `settings` | `settings/_components/settings-skeleton.tsx` | `SettingsSkeleton` | Page skeleton loader during profile details fetch |
+| `settings` | `settings/_components/personal-profile-tab.tsx` | `PersonalProfileTab` | Personal profile view & form calling GET/PATCH /api/auth/me |
+| `settings` | `settings/_components/appearance-settings-tab.tsx` | `AppearanceSettingsTab` | Theme mode & 9 accent colors selector with localStorage persistence |
 
 _(Add a row every time a new page-specific component is created. Group rows by page for readability.)_
 

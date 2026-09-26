@@ -18,6 +18,7 @@ import {
   VerifyEmailInput,
   RequestOtpInput,
   LoginWithOtpInput,
+  UpdateProfileInput,
 } from "./validation";
 
 const JWT_SECRET = process.env.JWT_SECRET || "testloom_jwt_secret_dev_key_2026";
@@ -693,6 +694,64 @@ export class AuthService {
         })),
         createdAt: user.createdAt.toISOString(),
       };
+
+      return ResponseService.ok(userProfile, undefined, request);
+    } catch (error: unknown) {
+      return ResponseService.handleError(error, request);
+    }
+  }
+
+  /**
+   * Update current user profile fields (firstName, lastName)
+   */
+  public static async updateUserProfile(
+    userId: string,
+    input: UpdateProfileInput,
+    request?: Request
+  ): Promise<NextResponse> {
+    try {
+      const user = await prisma.user.findFirst({
+        where: { id: userId, deletedAt: null },
+      });
+
+      if (!user) {
+        return ResponseService.notFound("User profile not found.", request);
+      }
+
+      const updatedUser = await prisma.user.update({
+        where: { id: userId },
+        data: {
+          ...(input.firstName ? { firstName: input.firstName } : {}),
+          ...(input.lastName ? { lastName: input.lastName } : {}),
+          ...(input.avatarUrl !== undefined ? { avatarUrl: input.avatarUrl } : {}),
+        },
+      });
+
+      const userMemberships = await prisma.organizationMember.findMany({
+        where: { userId: updatedUser.id, deletedAt: null },
+        include: { organization: true },
+      });
+
+      const userProfile: UserProfileResponse = {
+        id: updatedUser.id,
+        email: updatedUser.email,
+        firstName: updatedUser.firstName,
+        lastName: updatedUser.lastName,
+        avatarUrl: updatedUser.avatarUrl,
+        isVerified: updatedUser.isVerified,
+        status: updatedUser.status,
+        accountType: updatedUser.accountType,
+        hasCompletedOnboarding: updatedUser.hasCompletedOnboarding,
+        organizations: userMemberships.map((m) => ({
+          id: m.organization.id,
+          name: m.organization.name,
+          slug: m.organization.slug,
+          role: m.role,
+        })),
+        createdAt: updatedUser.createdAt.toISOString(),
+      };
+
+      logger.info(`User profile updated for ${updatedUser.email}`, "AuthService");
 
       return ResponseService.ok(userProfile, undefined, request);
     } catch (error: unknown) {
