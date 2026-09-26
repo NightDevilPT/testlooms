@@ -32,3 +32,24 @@ export interface OrganizationDetailsResponse {
 	companySize: string | null;
 	createdAt: string;
 }
+
+export type MemberRole = "ADMIN" | "QA_ENGINEER" | "VIEWER";
+export type MemberStatus = "PENDING" | "ACTIVE" | "REVOKED";
+
+export interface OrganizationMemberResponse {
+  id: string;
+  organizationId: string;
+  userId: string | null;
+  invitedEmail: string;
+  role: MemberRole;
+  status: MemberStatus;
+  joinedAt: string | null;
+  createdAt: string;
+  user?: {
+    id: string;
+    fullName: string;
+    email: string;
+    avatarUrl: string | null;
+  } | null;
+}
+

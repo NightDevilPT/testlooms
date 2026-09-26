@@ -71,6 +71,8 @@ model OrgInvite {
   id             String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   organizationId String    @db.Uuid
   email          String
+  firstName      String?
+  lastName       String?
   role           UserRole  @default(VIEWER)
   token          String    @unique
   invitedById    String?   @db.Uuid

@@ -23,3 +23,14 @@ export interface IdempotencyRecordData {
   deletedAt: Date | null;
   deletedBy: string | null;
 }
+
+/**
+ * Pure browser-safe & server-safe Idempotency Key generator.
+ * Does not import database drivers, making it safe for Client Components.
+ */
+export function generateIdempotencyKey(prefix: string = "idemp"): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return `${prefix}_${crypto.randomUUID()}`;
+  }
+  return `${prefix}_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+}

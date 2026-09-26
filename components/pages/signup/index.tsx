@@ -1,10 +1,11 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { Globe, Shield, KeyRound, Bug, Loader2 } from "lucide-react";
+import { Globe, Shield, KeyRound, Bug, Loader2, CheckCircle2 } from "lucide-react";
 import { cn } from "cn";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -19,32 +20,94 @@ import {
 } from "@/components/ui/field";
 import { useAuth } from "@/components/context/auth-context";
 import { signupSchema, SignupInput } from "@/lib/auth-service/validation";
+import { generateIdempotencyKey } from "@/lib/idempotency-service/types";
+import apiClient from "@/lib/api-client/api-client.service";
 
 export function SignupForm({
 	className,
 	...props
 }: React.ComponentProps<"div">) {
 	const { signup } = useAuth();
+	const router = useRouter();
+	const searchParams = useSearchParams();
 	const [formError, setFormError] = useState<string | null>(null);
+
+	const inviteTokenParam = searchParams.get("inviteToken") || searchParams.get("token");
+	const emailParam = searchParams.get("email");
+	const firstNameParam = searchParams.get("firstName");
+	const lastNameParam = searchParams.get("lastName");
+
+	const isInvitedUser = Boolean(inviteTokenParam);
+	const [fetchedInvite, setFetchedInvite] = useState<{
+		firstName: string;
+		lastName: string;
+		email: string;
+		organizationName: string;
+	} | null>(null);
 
 	const {
 		register,
 		handleSubmit,
+		setValue,
 		formState: { errors, isSubmitting },
 	} = useForm<SignupInput>({
 		resolver: zodResolver(signupSchema),
 		defaultValues: {
-			firstName: "",
-			lastName: "",
-			email: "",
+			firstName: firstNameParam || "",
+			lastName: lastNameParam || "",
+			email: emailParam || "",
 			password: "",
+			inviteToken: inviteTokenParam || undefined,
 		},
 	});
 
+	useEffect(() => {
+		if (firstNameParam) setValue("firstName", firstNameParam);
+		if (lastNameParam) setValue("lastName", lastNameParam);
+		if (emailParam) setValue("email", emailParam);
+
+		if (inviteTokenParam) {
+			setValue("inviteToken", inviteTokenParam);
+
+			apiClient
+				.get<{
+					email: string;
+					firstName: string;
+					lastName: string;
+					organizationName: string;
+				}>(`/api/auth/invite-details?token=${encodeURIComponent(inviteTokenParam)}`)
+				.then((res) => {
+					if (res.success && res.data && !Array.isArray(res.data)) {
+						setFetchedInvite(res.data);
+						if (res.data.firstName) setValue("firstName", res.data.firstName);
+						if (res.data.lastName) setValue("lastName", res.data.lastName);
+						if (res.data.email) setValue("email", res.data.email);
+					}
+				})
+				.catch(() => {});
+		}
+	}, [searchParams, setValue, firstNameParam, lastNameParam, emailParam, inviteTokenParam]);
+
 	const onSubmit = async (data: SignupInput) => {
 		setFormError(null);
-		const result = await signup(data);
-		if (!result.success && result.error) {
+		const idempotencyKey = generateIdempotencyKey("signup");
+		const signupPayload: SignupInput = {
+			firstName: isInvitedUser
+				? (fetchedInvite?.firstName || firstNameParam || data.firstName)
+				: data.firstName,
+			lastName: isInvitedUser
+				? (fetchedInvite?.lastName || lastNameParam || data.lastName)
+				: data.lastName,
+			email: isInvitedUser
+				? (fetchedInvite?.email || emailParam || data.email)
+				: data.email,
+			password: data.password,
+			inviteToken: inviteTokenParam || data.inviteToken,
+		};
+		const result = await signup(signupPayload, idempotencyKey);
+		if (result.success) {
+			router.push(`/auth/verify-email?email=${encodeURIComponent(signupPayload.email)}`);
+		} else if (result.error) {
 			setFormError(result.error);
 		}
 	};
@@ -55,7 +118,7 @@ export function SignupForm({
 				<CardContent className="grid p-0 md:grid-cols-2">
 					<form
 						onSubmit={handleSubmit(onSubmit)}
-						className="p-6 md:p-8"
+						className="p-6 md:p-8 flex flex-col justify-between"
 					>
 						<FieldGroup>
 							<div className="flex flex-col items-center gap-2 text-center">
@@ -63,9 +126,20 @@ export function SignupForm({
 									Create an account
 								</h1>
 								<p className="text-balance text-sm text-muted-foreground">
-									Get started with TestLoom automation
+									{isInvitedUser
+										? "Set your password to complete your account & join your team"
+										: "Get started with TestLoom automation"}
 								</p>
 							</div>
+
+							{isInvitedUser && (
+								<div className="rounded-md bg-emerald-500/10 border border-emerald-500/20 p-3 text-xs font-medium text-emerald-400 flex items-center gap-2">
+									<CheckCircle2 className="h-4 w-4 shrink-0" />
+									<span>
+										Joining {fetchedInvite?.organizationName || "organization"} as <strong>{fetchedInvite?.email || emailParam}</strong>
+									</span>
+								</div>
+							)}
 
 							{formError && (
 								<div
@@ -83,7 +157,9 @@ export function SignupForm({
 									</FieldLabel>
 									<Input
 										id="firstName"
-										placeholder="John"
+										placeholder={isInvitedUser ? "" : "John"}
+										disabled={isInvitedUser || isSubmitting}
+										className={cn(isInvitedUser && "bg-muted text-muted-foreground cursor-not-allowed opacity-90")}
 										{...register("firstName")}
 									/>
 									<FieldError
@@ -102,7 +178,9 @@ export function SignupForm({
 									</FieldLabel>
 									<Input
 										id="lastName"
-										placeholder="Doe"
+										placeholder={isInvitedUser ? "" : "Doe"}
+										disabled={isInvitedUser || isSubmitting}
+										className={cn(isInvitedUser && "bg-muted text-muted-foreground cursor-not-allowed opacity-90")}
 										{...register("lastName")}
 									/>
 									<FieldError
@@ -121,7 +199,9 @@ export function SignupForm({
 								<Input
 									id="email"
 									type="email"
-									placeholder="name@example.com"
+									placeholder={isInvitedUser ? "" : "name@example.com"}
+									disabled={isInvitedUser || isSubmitting}
+									className={cn(isInvitedUser && "bg-muted text-muted-foreground cursor-not-allowed opacity-90")}
 									{...register("email")}
 								/>
 								<FieldError
@@ -133,12 +213,14 @@ export function SignupForm({
 
 							<Field data-invalid={!!errors.password}>
 								<FieldLabel htmlFor="password">
-									Password
+									Create Password
 								</FieldLabel>
 								<Input
 									id="password"
 									type="password"
 									placeholder="••••••••"
+									disabled={isSubmitting}
+									autoFocus={isInvitedUser}
 									{...register("password")}
 								/>
 								<FieldError
@@ -160,7 +242,7 @@ export function SignupForm({
 											Creating account...
 										</>
 									) : (
-										"Sign up"
+										"Sign up & Join Team"
 									)}
 								</Button>
 							</Field>
@@ -170,7 +252,11 @@ export function SignupForm({
 							<FieldDescription className="text-center">
 								Already have an account?{" "}
 								<Link
-									href="/auth/login"
+									href={
+										inviteTokenParam
+											? `/auth/login?inviteToken=${encodeURIComponent(inviteTokenParam)}&email=${encodeURIComponent(emailParam || "")}`
+											: "/auth/login"
+									}
 									className="font-medium text-primary underline-offset-4 hover:underline"
 								>
 									Log in

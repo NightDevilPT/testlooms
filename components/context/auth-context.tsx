@@ -25,9 +25,11 @@ export interface AuthContextType {
 	) => Promise<{ success: boolean; error?: string }>;
 	signup: (
 		data: SignupInput,
+		idempotencyKey?: string,
 	) => Promise<{ success: boolean; error?: string }>;
 	setupWorkspace: (
 		data: SetupWorkspaceInput,
+		idempotencyKey?: string,
 	) => Promise<{ success: boolean; error?: string }>;
 	logout: () => Promise<void>;
 	refetchUser: () => Promise<void>;
@@ -35,7 +37,7 @@ export interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const PUBLIC_ROUTES = ["/login", "/signup", "/", "/auth/login", "/auth/signup"];
+const PUBLIC_ROUTES = ["/login", "/signup", "/", "/auth/login", "/auth/signup", "/auth/verify-email", "/auth/accept-invite"];
 
 export function AuthProvider({ children }: { children: ReactNode }) {
 	const [user, setUser] = useState<UserProfileResponse | null>(null);
@@ -99,7 +101,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 	}, [isAuthenticated, isLoading, pathname, router]);
 
 	/**
-	 * Login action handler
+	 * Login action handler (Authentication session endpoint - no entity creation)
 	 */
 	const login = async (
 		credentials: LoginInput,
@@ -134,23 +136,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 	};
 
 	/**
-	 * Signup action handler
+	 * Signup action handler (Creates User entity - accepts optional idempotencyKey from submit handler)
 	 */
 	const signup = async (
 		data: SignupInput,
+		idempotencyKey?: string,
 	): Promise<{ success: boolean; error?: string }> => {
 		setIsLoading(true);
 		try {
-			const idempotencyKey =
-				typeof crypto !== "undefined" && crypto.randomUUID
-					? crypto.randomUUID()
-					: undefined;
 			const response = await apiClient.post<UserProfileResponse>(
 				"/api/auth/signup",
 				data,
-				{
-					idempotencyKey,
-				},
+				idempotencyKey ? { idempotencyKey } : undefined,
 			);
 
 			if (response.success && response.data) {
@@ -174,16 +171,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 	};
 
 	/**
-	 * Workspace Setup action handler (Personal or Organization setup)
+	 * Workspace Setup action handler (Updates User profile / Creates Organization entity)
 	 */
 	const setupWorkspace = async (
 		data: SetupWorkspaceInput,
+		idempotencyKey?: string,
 	): Promise<{ success: boolean; error?: string }> => {
 		setIsLoading(true);
 		try {
 			const response = await apiClient.post<UserProfileResponse>(
 				"/api/auth/setup-workspace",
 				data,
+				idempotencyKey ? { idempotencyKey } : undefined,
 			);
 
 			if (response.success && response.data && !Array.isArray(response.data)) {
@@ -241,9 +240,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 	);
 }
 
-/**
- * Custom Hook to consume AuthContext cleanly in any React Component
- */
 export function useAuth(): AuthContextType {
 	const context = useContext(AuthContext);
 	if (!context) {

@@ -63,3 +63,29 @@ export const updateOrganizationSchema = z.object({
 });
 
 export type UpdateOrganizationInput = z.infer<typeof updateOrganizationSchema>;
+
+export const inviteMemberSchema = z.object({
+  firstName: z.string().trim().max(50, "First name max 50 characters").optional(),
+  lastName: z.string().trim().max(50, "Last name max 50 characters").optional(),
+  email: z.string().trim().email("Please enter a valid email address"),
+  role: z.enum(["ADMIN", "QA_ENGINEER", "VIEWER"] as const),
+});
+
+export type InviteMemberInput = z.infer<typeof inviteMemberSchema>;
+
+export const updateMemberRoleSchema = z.object({
+  role: z.enum(["ADMIN", "QA_ENGINEER", "VIEWER"] as const),
+});
+
+export type UpdateMemberRoleInput = z.infer<typeof updateMemberRoleSchema>;
+
+export const getMembersQuerySchema = z.object({
+  search: z.string().trim().optional(),
+  status: z.enum(["ALL", "ACTIVE", "PENDING"] as const).optional().default("ALL"),
+  role: z.enum(["ALL", "ADMIN", "QA_ENGINEER", "VIEWER"] as const).optional().default("ALL"),
+  page: z.coerce.number().int().min(1).optional().default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).optional().default(10),
+});
+
+export type GetMembersQuery = z.infer<typeof getMembersQuerySchema>;
+

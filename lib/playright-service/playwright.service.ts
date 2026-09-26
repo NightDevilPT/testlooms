@@ -6,8 +6,8 @@ import {
   SupportedFramework,
   SupportedLanguage,
 } from './types';
+import { logger } from '@/lib/logger-service/logger.service';
 
-export * from './types';
 
 // Global store to persist browser sessions across Next.js dev hot reloads
 const globalForPlaywright = globalThis as unknown as {
@@ -517,7 +517,7 @@ export class PlaywrightService {
       session.currentUrl = session.page.url();
       session.pageTitle = await session.page.title();
     } catch (err: unknown) {
-      console.error(`Click failed at (${x}, ${y}):`, err);
+      logger.error(`Click failed at (${x}, ${y})`, 'PlaywrightService', err);
     }
 
     await this.updateFrameCache(session);
@@ -539,7 +539,7 @@ export class PlaywrightService {
         timestamp: new Date().toLocaleTimeString(),
       });
     } catch (err: unknown) {
-      console.error(`Click failed on selector (${selector}):`, err);
+      logger.error(`Click failed on selector (${selector})`, 'PlaywrightService', err);
     }
     await this.updateFrameCache(session);
     return session;
@@ -561,7 +561,7 @@ export class PlaywrightService {
         timestamp: new Date().toLocaleTimeString(),
       });
     } catch (err: unknown) {
-      console.error(`Type failed on selector (${selector}):`, err);
+      logger.error(`Type failed on selector (${selector})`, 'PlaywrightService', err);
     }
     await this.updateFrameCache(session);
     return session;
@@ -583,7 +583,7 @@ export class PlaywrightService {
         timestamp: new Date().toLocaleTimeString(),
       });
     } catch (err: unknown) {
-      console.error(`Select option failed on selector (${selector}):`, err);
+      logger.error(`Select option failed on selector (${selector})`, 'PlaywrightService', err);
     }
     await this.updateFrameCache(session);
     return session;
@@ -612,7 +612,7 @@ export class PlaywrightService {
         timestamp: new Date().toLocaleTimeString(),
       });
     } catch (err: unknown) {
-      console.error(`File upload failed on selector (${selector}):`, err);
+      logger.error(`File upload failed on selector (${selector})`, 'PlaywrightService', err);
     }
 
     await this.updateFrameCache(session);
@@ -647,7 +647,7 @@ export class PlaywrightService {
         timestamp: new Date().toLocaleTimeString(),
       });
     } catch (err: unknown) {
-      console.error(`File chooser upload failed on trigger (${triggerSelector}):`, err);
+      logger.error(`File chooser upload failed on trigger (${triggerSelector})`, 'PlaywrightService', err);
     }
 
     await this.updateFrameCache(session);
@@ -669,7 +669,7 @@ export class PlaywrightService {
         timestamp: new Date().toLocaleTimeString(),
       });
     } catch (err: unknown) {
-      console.error(`Hover failed on selector (${selector}):`, err);
+      logger.error(`Hover failed on selector (${selector})`, 'PlaywrightService', err);
     }
     await this.updateFrameCache(session);
     return session;
@@ -685,7 +685,7 @@ export class PlaywrightService {
     try {
       await session.page.mouse.wheel(deltaX, deltaY);
     } catch (err: unknown) {
-      console.error('Scroll failed:', err);
+      logger.error('Scroll failed', 'PlaywrightService', err);
     }
 
     await this.updateFrameCache(session);
@@ -709,7 +709,7 @@ export class PlaywrightService {
         timestamp: new Date().toLocaleTimeString(),
       });
     } catch (err: unknown) {
-      console.error(`Press key failed (${key}):`, err);
+      logger.error(`Press key failed (${key})`, 'PlaywrightService', err);
     }
 
     await this.updateFrameCache(session);
@@ -873,7 +873,7 @@ export class PlaywrightService {
       session.currentUrl = session.page.url();
       session.pageTitle = await session.page.title();
     } catch (err: unknown) {
-      console.error('Go back failed:', err);
+      logger.error('Go back failed', 'PlaywrightService', err);
     }
     await this.updateFrameCache(session);
     return session;
@@ -889,7 +889,7 @@ export class PlaywrightService {
       session.currentUrl = session.page.url();
       session.pageTitle = await session.page.title();
     } catch (err: unknown) {
-      console.error('Go forward failed:', err);
+      logger.error('Go forward failed', 'PlaywrightService', err);
     }
     await this.updateFrameCache(session);
     return session;
@@ -905,7 +905,7 @@ export class PlaywrightService {
       session.currentUrl = session.page.url();
       session.pageTitle = await session.page.title();
     } catch (err: unknown) {
-      console.error('Reload failed:', err);
+      logger.error('Reload failed', 'PlaywrightService', err);
     }
     await this.updateFrameCache(session);
     return session;
@@ -1050,7 +1050,7 @@ export class PlaywrightService {
         await this.closeSession(sessionId);
       }
     } catch (err) {
-      console.error(`Replay error for session ${sessionId}:`, err);
+      logger.error(`Replay error for session ${sessionId}`, 'PlaywrightService', err);
     } finally {
       session.isLoading = false;
       await this.updateFrameCache(session);
@@ -1087,7 +1087,7 @@ export class PlaywrightService {
         await session.context.close();
         await session.browser.close();
       } catch (err: unknown) {
-        console.error(`Error closing session ${sessionId}:`, err);
+        logger.error(`Error closing session ${sessionId}`, 'PlaywrightService', err);
       }
       sessions.delete(sessionId);
     }

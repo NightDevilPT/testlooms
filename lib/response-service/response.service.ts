@@ -12,6 +12,7 @@ import {
   ERROR_REGISTRY,
   FormattedValidationError,
 } from "./types";
+import { logger } from "@/lib/logger-service/logger.service";
 
 /**
  * Clean, Central Response & Error Handling Service for TestLoom API Endpoints
@@ -192,19 +193,22 @@ export class ResponseService {
           return this.notFound("The requested database record was not found.", request);
         }
         default: {
-          console.error("[ResponseService] Prisma Known Request Error:", error.code, error.message);
+          logger.error(
+            `Prisma Known Request Error: ${error.code} - ${error.message}`,
+            "ResponseService"
+          );
           return this.fail(ErrorCode.DATABASE_ERROR, "A database constraint error occurred.", request);
         }
       }
     }
 
     if (error instanceof Error) {
-      console.error("[ResponseService] Unhandled Exception:", error.name, error.message, error.stack);
+      logger.error("Unhandled Exception", "ResponseService", error);
       const msg = process.env.NODE_ENV === "development" ? error.message : undefined;
       return this.internalError(msg, request);
     }
 
-    console.error("[ResponseService] Unknown Exception Object:", error);
+    logger.error("Unknown Exception Object", "ResponseService", error);
     return this.internalError(undefined, request);
   }
 }

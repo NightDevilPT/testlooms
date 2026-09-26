@@ -4,12 +4,21 @@ import { cookies } from "next/headers";
 import { NextResponse } from "next/server";
 import prisma from "@/lib/db/prisma";
 import ResponseService from "@/lib/response-service/response.service";
+import MailService from "@/lib/mail-service/mail.service";
+import { logger } from "@/lib/logger-service/logger.service";
 import {
   AuthSessionResult,
   UserProfileResponse,
   JwtPayload,
 } from "./types";
-import { SignupInput, LoginInput, SetupWorkspaceInput } from "./validation";
+import {
+  SignupInput,
+  LoginInput,
+  SetupWorkspaceInput,
+  VerifyEmailInput,
+  RequestOtpInput,
+  LoginWithOtpInput,
+} from "./validation";
 
 const JWT_SECRET = process.env.JWT_SECRET || "testloom_jwt_secret_dev_key_2026";
 const ACCESS_TOKEN_EXPIRATION = "12m"; // 12 minutes
@@ -75,7 +84,130 @@ export class AuthService {
   // ==========================================
 
   /**
-   * Register a new user profile without issuing active session
+   * Private helper: Process and accept an organization invite token for a user
+   */
+  public static async processInviteToken(userId: string, email: string, token: string) {
+    try {
+      const invite = await prisma.orgInvite.findFirst({
+        where: {
+          token,
+          deletedAt: null,
+          acceptedAt: null,
+          expiresAt: { gt: new Date() },
+        },
+      });
+
+      if (!invite) return;
+
+      if (invite.email.toLowerCase() !== email.toLowerCase()) {
+        logger.warn(`Invite token email (${invite.email}) does not match user email (${email})`, "AuthService");
+        return;
+      }
+
+      const existingMember = await prisma.organizationMember.findFirst({
+        where: {
+          organizationId: invite.organizationId,
+          userId,
+          deletedAt: null,
+        },
+      });
+
+      if (!existingMember) {
+        await prisma.organizationMember.create({
+          data: {
+            organizationId: invite.organizationId,
+            userId,
+            role: invite.role,
+            joinedAt: new Date(),
+            createdBy: invite.invitedById,
+          },
+        });
+      }
+
+      await prisma.orgInvite.update({
+        where: { id: invite.id },
+        data: { acceptedAt: new Date() },
+      });
+
+      await prisma.user.update({
+        where: { id: userId },
+        data: {
+          accountType: "ORGANIZATION",
+          hasCompletedOnboarding: true,
+        },
+      });
+
+      logger.info(`User ${email} successfully joined organization ${invite.organizationId} via invite token`, "AuthService");
+    } catch (err) {
+      logger.error("Failed to process invite token", { error: err, userId, token });
+    }
+  }
+
+  /**
+   * Validate an invitation token and return invitation details
+   */
+  public static async validateInviteToken(token: string, request?: Request): Promise<NextResponse> {
+    try {
+      const invite = await prisma.orgInvite.findFirst({
+        where: {
+          token,
+          deletedAt: null,
+          acceptedAt: null,
+          expiresAt: { gt: new Date() },
+        },
+        include: {
+          organization: true,
+        },
+      });
+
+      if (!invite) {
+        return ResponseService.badRequest("Invalid, expired, or already accepted invitation link.", request);
+      }
+
+      const existingUser = await prisma.user.findFirst({
+        where: { email: invite.email, deletedAt: null },
+      });
+
+      return ResponseService.ok(
+        {
+          email: invite.email,
+          firstName: invite.firstName || "",
+          lastName: invite.lastName || "",
+          role: invite.role,
+          organizationName: invite.organization.name,
+          isExistingUser: Boolean(existingUser),
+        },
+        undefined,
+        request
+      );
+    } catch (error: unknown) {
+      return ResponseService.handleError(error, request);
+    }
+  }
+
+  /**
+   * Accept an invitation token for a logged-in user
+   */
+  public static async acceptInvite(userId: string, token: string, request?: Request): Promise<NextResponse> {
+    try {
+      const user = await prisma.user.findFirst({
+        where: { id: userId, deletedAt: null },
+      });
+
+      if (!user) {
+        return ResponseService.notFound("User not found.", request);
+      }
+
+      await this.processInviteToken(user.id, user.email, token);
+
+      return ResponseService.ok({ message: "Successfully joined organization!" }, undefined, request);
+    } catch (error: unknown) {
+      return ResponseService.handleError(error, request);
+    }
+  }
+
+  /**
+   * Register a new user profile and send email verification OTP
    */
   public static async signup(input: SignupInput, request?: Request): Promise<NextResponse> {
     try {
@@ -105,6 +237,39 @@ export class AuthService {
         },
       });
 
+      // Process invitation token if provided during registration
+      if (input.inviteToken) {
+        await this.processInviteToken(user.id, user.email, input.inviteToken);
+      }
+
+      // Generate 6-digit numeric OTP code for Email Verification
+      const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+      const otpHash = await bcrypt.hash(otpCode, 10);
+      const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes expiry
+
+      await prisma.otpVerification.create({
+        data: {
+          userId: user.id,
+          email: user.email,
+          otpHash,
+          purpose: "EMAIL_VERIFICATION",
+          expiresAt,
+        },
+      });
+
+      // Send Email Verification via Gmail SMTP Provider
+      await MailService.sendOtpEmail({
+        toEmail: user.email,
+        otpCode,
+        purpose: "EMAIL_VERIFICATION",
+        expiresInMinutes: 10,
+      });
+
+      logger.info(
+        `Verification email sent to ${user.email}`,
+        "AuthService"
+      );
+
       const userProfile: UserProfileResponse = {
         id: user.id,
         email: user.email,
@@ -120,6 +285,241 @@ export class AuthService {
       };
 
       return ResponseService.created(userProfile, request);
+    } catch (error: unknown) {
+      return ResponseService.handleError(error, request);
+    }
+  }
+
+  /**
+   * Verify email OTP code and mark user as verified
+   */
+  public static async verifyEmailOtp(
+    input: VerifyEmailInput,
+    request?: Request
+  ): Promise<NextResponse> {
+    try {
+      const record = await prisma.otpVerification.findFirst({
+        where: {
+          email: input.email,
+          purpose: "EMAIL_VERIFICATION",
+          verifiedAt: null,
+          deletedAt: null,
+          expiresAt: { gt: new Date() },
+        },
+        orderBy: { createdAt: "desc" },
+      });
+
+      if (!record) {
+        return ResponseService.badRequest(
+          "Invalid or expired verification code. Please request a new code.",
+          request
+        );
+      }
+
+      const isMatch = await bcrypt.compare(input.otpCode, record.otpHash);
+      if (!isMatch) {
+        await prisma.otpVerification.update({
+          where: { id: record.id },
+          data: { attempts: { increment: 1 } },
+        });
+        return ResponseService.unauthorized("Invalid verification code.", request);
+      }
+
+      // Mark OTP as verified & update User.isVerified = true
+      await prisma.otpVerification.update({
+        where: { id: record.id },
+        data: { verifiedAt: new Date() },
+      });
+
+      await prisma.user.update({
+        where: { email: input.email },
+        data: { isVerified: true },
+      });
+
+      logger.info(`Email address ${input.email} verified successfully.`, "AuthService");
+
+      return ResponseService.ok(
+        { message: "Email address verified successfully. You can now log in." },
+        undefined,
+        request
+      );
+    } catch (error: unknown) {
+      return ResponseService.handleError(error, request);
+    }
+  }
+
+  /**
+   * Request an OTP code via email (for Login or Email Verification resend)
+   */
+  public static async requestOtp(
+    input: RequestOtpInput,
+    request?: Request
+  ): Promise<NextResponse> {
+    try {
+      const user = await prisma.user.findFirst({
+        where: { email: input.email, deletedAt: null },
+      });
+
+      if (!user) {
+        return ResponseService.notFound(
+          "No registered account found with this email address.",
+          request
+        );
+      }
+
+      if (user.status === "SUSPENDED" || user.status === "INACTIVE") {
+        return ResponseService.forbidden(
+          "Account is deactivated or suspended.",
+          request
+        );
+      }
+
+      const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
+      const otpHash = await bcrypt.hash(otpCode, 10);
+      const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
+
+      await prisma.otpVerification.create({
+        data: {
+          userId: user.id,
+          email: user.email,
+          otpHash,
+          purpose: input.purpose,
+          expiresAt,
+        },
+      });
+
+      await MailService.sendOtpEmail({
+        toEmail: user.email,
+        otpCode,
+        purpose: input.purpose,
+        expiresInMinutes: 10,
+      });
+
+      logger.info(`OTP requested and email sent to ${user.email} (purpose: ${input.purpose})`, "AuthService");
+
+      return ResponseService.ok(
+        { message: `Verification code sent to ${user.email}` },
+        undefined,
+        request
+      );
+    } catch (error: unknown) {
+      return ResponseService.handleError(error, request);
+    }
+  }
+
+  /**
+   * Authenticate user with 6-digit OTP code (Passwordless Login)
+   */
+  public static async loginWithOtp(
+    input: LoginWithOtpInput,
+    request?: Request
+  ): Promise<NextResponse> {
+    try {
+      const user = await prisma.user.findFirst({
+        where: { email: input.email, deletedAt: null },
+      });
+
+      if (!user) {
+        return ResponseService.unauthorized("Invalid email address.", request);
+      }
+
+      if (user.status === "SUSPENDED" || user.status === "INACTIVE") {
+        return ResponseService.forbidden(
+          "Account is deactivated or suspended.",
+          request
+        );
+      }
+
+      const record = await prisma.otpVerification.findFirst({
+        where: {
+          email: input.email,
+          purpose: "LOGIN",
+          verifiedAt: null,
+          deletedAt: null,
+          expiresAt: { gt: new Date() },
+        },
+        orderBy: { createdAt: "desc" },
+      });
+
+      if (!record) {
+        return ResponseService.unauthorized(
+          "Invalid or expired login code. Please request a new code.",
+          request
+        );
+      }
+
+      const isMatch = await bcrypt.compare(input.otpCode, record.otpHash);
+      if (!isMatch) {
+        await prisma.otpVerification.update({
+          where: { id: record.id },
+          data: { attempts: { increment: 1 } },
+        });
+        return ResponseService.unauthorized("Invalid login verification code.", request);
+      }
+
+      // Mark OTP as verified & update User.isVerified = true if needed
+      await prisma.otpVerification.update({
+        where: { id: record.id },
+        data: { verifiedAt: new Date() },
+      });
+
+      if (!user.isVerified) {
+        await prisma.user.update({
+          where: { id: user.id },
+          data: { isVerified: true },
+        });
+      }
+
+      const tokens = this.generateTokens(user.id, user.email);
+
+      await prisma.refreshToken.create({
+        data: {
+          userId: user.id,
+          accessToken: tokens.accessToken,
+          refreshToken: tokens.refreshToken,
+          accessTokenExpiresAt: tokens.accessTokenExpiresAt,
+          expiresAt: tokens.expiresAt,
+        },
+      });
+
+      await this.setAuthCookie(tokens.accessToken);
+
+      const userMemberships = await prisma.organizationMember.findMany({
+        where: { userId: user.id, deletedAt: null },
+        include: { organization: true },
+      });
+
+      const userProfile: UserProfileResponse = {
+        id: user.id,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        avatarUrl: user.avatarUrl,
+        isVerified: true,
+        status: user.status,
+        accountType: user.accountType,
+        hasCompletedOnboarding: user.hasCompletedOnboarding,
+        organizations: userMemberships.map((m) => ({
+          id: m.organization.id,
+          name: m.organization.name,
+          slug: m.organization.slug,
+          role: m.role,
+        })),
+        createdAt: user.createdAt.toISOString(),
+      };
+
+      const result: AuthSessionResult = {
+        user: userProfile,
+        accessToken: tokens.accessToken,
+      };
+
+      if (input.inviteToken) {
+        await this.processInviteToken(user.id, user.email, input.inviteToken);
+      }
+
+      logger.info(`User ${user.email} logged in via OTP.`, "AuthService");
+
+      return ResponseService.ok(result, undefined, request);
     } catch (error: unknown) {
       return ResponseService.handleError(error, request);
     }
@@ -149,6 +549,13 @@ export class AuthService {
       if (user.status === "SUSPENDED" || user.status === "INACTIVE") {
         return ResponseService.forbidden(
           "Account is deactivated or suspended.",
+          request
+        );
+      }
+
+      if (!user.isVerified) {
+        return ResponseService.forbidden(
+          "Your email address is not verified. Please verify your email before logging in.",
           request
         );
       }
@@ -195,6 +602,10 @@ export class AuthService {
         user: userProfile,
         accessToken: tokens.accessToken,
       };
+
+      if (input.inviteToken) {
+        await this.processInviteToken(user.id, user.email, input.inviteToken);
+      }
 
       return ResponseService.ok(result, undefined, request);
     } catch (error: unknown) {

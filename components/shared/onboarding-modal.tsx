@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import { useAuth } from "@/components/context/auth-context";
 import { SetupWorkspaceInput } from "@/lib/auth-service/validation";
+import { generateIdempotencyKey } from "@/lib/idempotency-service/types";
 import { Dialog, DialogContent } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,7 +11,6 @@ import { Card } from "@/components/ui/card";
 import {
   Field,
   FieldDescription,
-  FieldError,
   FieldGroup,
   FieldLabel,
 } from "@/components/ui/field";
@@ -86,7 +86,8 @@ export function OnboardingModal() {
 
     setIsSubmitting(true);
     try {
-      const result = await setupWorkspace(payload);
+      const idempotencyKey = generateIdempotencyKey("setup_workspace");
+      const result = await setupWorkspace(payload, idempotencyKey);
       if (!result.success && result.error) {
         setFormError(result.error);
       }

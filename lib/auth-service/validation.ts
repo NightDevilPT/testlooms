@@ -15,6 +15,7 @@ export const signupSchema = z.object({
     .regex(/[A-Z]/, "Password must contain at least one uppercase letter")
     .regex(/[a-z]/, "Password must contain at least one lowercase letter")
     .regex(/[0-9]/, "Password must contain at least one digit"),
+  inviteToken: z.string().optional(),
 });
 
 export type SignupInput = z.infer<typeof signupSchema>;
@@ -22,9 +23,39 @@ export type SignupInput = z.infer<typeof signupSchema>;
 export const loginSchema = z.object({
   email: z.string().trim().email("Invalid email address").toLowerCase(),
   password: z.string().min(1, "Password is required"),
+  inviteToken: z.string().optional(),
 });
 
 export type LoginInput = z.infer<typeof loginSchema>;
+
+export const verifyEmailSchema = z.object({
+  email: z.string().trim().email("Invalid email address").toLowerCase(),
+  otpCode: z.string().trim().length(6, "Verification code must be 6 digits").regex(/^\d+$/, "Code must contain digits only"),
+  inviteToken: z.string().optional(),
+});
+
+export type VerifyEmailInput = z.infer<typeof verifyEmailSchema>;
+
+export const requestOtpSchema = z.object({
+  email: z.string().trim().email("Invalid email address").toLowerCase(),
+  purpose: z.enum(["LOGIN", "EMAIL_VERIFICATION", "PASSWORD_RESET"] as const).default("LOGIN"),
+});
+
+export type RequestOtpInput = z.infer<typeof requestOtpSchema>;
+
+export const loginWithOtpSchema = z.object({
+  email: z.string().trim().email("Invalid email address").toLowerCase(),
+  otpCode: z.string().trim().length(6, "Verification code must be 6 digits").regex(/^\d+$/, "Code must contain digits only"),
+  inviteToken: z.string().optional(),
+});
+
+export type LoginWithOtpInput = z.infer<typeof loginWithOtpSchema>;
+
+export const acceptInviteSchema = z.object({
+  token: z.string().trim().min(1, "Invite token is required"),
+});
+
+export type AcceptInviteInput = z.infer<typeof acceptInviteSchema>;
 
 export const setupWorkspaceSchema = z.discriminatedUnion("accountType", [
   z.object({

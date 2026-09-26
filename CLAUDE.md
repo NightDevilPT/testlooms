@@ -126,11 +126,13 @@ testloom/
 - **NO DUPLICATE PAGES:** Public/demo pages must have a single canonical location (e.g. `app/(public)/page.tsx`). Do not create duplicate page routes or alias pages.
 - **Every new file added to `components/shared/` must be listed in §11.2 (Shared Components Registry) in the same change set** — do not add a shared component without registering it.
 
-### 1.3 Page-Specific Components — `components/pages/<page-name>/_components/` (LOCAL)
+### 1.3 Page-Specific Components — `components/pages/<page-name>/_components/` (STRICT MANDATORY PATTERN)
 
-- Anything used on **exactly one page** — forms, skeletons, local layout pieces — belongs here, never in `components/shared/`.
-- Example: `components/pages/dashboard/_components/dashboard-skeleton.tsx`, `components/pages/checkout/_components/checkout-form.tsx`.
-- `<page-name>` must match the corresponding route segment under `app/(dashboard)/` or `app/(auth)/`.
+- **Strict Modular UI Pattern:** Anything used on **exactly one page** — forms, dialogs, skeletons, local layout pieces — belongs under `components/pages/<page-name>/_components/`, never in `components/shared/` or inline in `index.tsx`.
+- **Forms & Dialog Modals:** All page forms, edit cards, dialog modals, and alert popups MUST be extracted into `components/pages/<page-name>/_components/<feature>-dialog.tsx` or `components/pages/<page-name>/_components/<feature>-form.tsx` (e.g., `invite-member-dialog.tsx`, `organization-form.tsx`, `edit-role-dialog.tsx`).
+- **Page Loading Skeletons:** Every page MUST provide a dedicated loading skeleton component in `components/pages/<page-name>/_components/<page-name>-skeleton.tsx` (e.g., `members-skeleton.tsx`, `organization-skeleton.tsx`, `dashboard-skeleton.tsx`).
+- **Page Orchestrator Role:** Page `index.tsx` serves purely as the clean layout and state orchestrator (fetching data, managing state, and composing `_components`).
+- `<page-name>` must match the corresponding route segment under `app/(dashboard)/`, `app/(auth)/`, or `app/(public)/`.
 - **Before adding a new shared component, check whether a page-specific one already exists that could be promoted** — don't duplicate logic between a page-local and a shared version.
 - **Every new file added under `components/pages/<page-name>/_components/` must be listed in §11.3 (Page Components Registry) in the same change set.**
 
@@ -199,6 +201,9 @@ lib/<service-name>/
 | `lib/export-service/`        | Code generation per `targetFramework` (Playwright TS / Cypress / Selenium / Cucumber)                            |
 | `lib/rbac-service/`          | Central permission-matrix checks (Admin / QA Engineer / Viewer) — the **only** place role checks are implemented |
 | `lib/idempotency-service/`   | Request deduplication checking, key locking, response caching, lock release, and expired record purging         |
+| `lib/dashboard-service/`     | Dashboard telemetry aggregation, execution trends, scenario distribution, and recent test run stats              |
+| `lib/mail-service/`          | Extensible factory-pattern email service (Gmail SMTP, HTML invite & OTP templates, multi-provider ready)           |
+| `lib/logger-service/`        | Isomorphic Logger Service with automatic sensitive data masking (passwords, tokens, secrets) & no icons           |
 
 **Do not duplicate permission logic anywhere else.** Every route handler or server action that needs a role check calls `rbac-service`, never re-derives it from `organization_members.role` directly.
 
@@ -210,6 +215,13 @@ lib/<service-name>/
 - **Refresh Token Validation & In-Place Rotation**: Check if the associated `refreshToken` in DB is valid (`expiresAt > now` and `revokedAt IS NULL`).
   - If invalid / expired / revoked: Return `HTTP 401 Unauthorized` (`code: "UNAUTHORIZED_SESSION_EXPIRED"`), requiring re-login.
   - If valid: Generate new `accessToken` & `refreshToken`, **update the current user's existing DB session row in-place** (`accessToken`, `refreshToken`, `accessTokenExpiresAt`, `expiresAt`, `updatedAt`), and set the new `access_token` in cookie (do NOT insert a new DB row).
+
+### 2.3 Logging & Telemetry Rules (`lib/logger-service/`)
+
+- **No Raw Console Usage**: **Never** call raw `console.log`, `console.warn`, `console.error`, `console.info`, or `console.debug` directly anywhere in frontend components, API route handlers, backend services, or scripts.
+- **Isomorphic Logger**: Always import and use `logger` from `@/lib/logger-service/logger.service` (`logger.info(...)`, `logger.warn(...)`, `logger.error(...)`, `logger.debug(...)`).
+- **No Icons / Emojis**: Log messages MUST remain clean, professional, and standard. **Do NOT include any icons, emojis, or decorative characters in log strings.**
+- **Automatic Sensitive Data Masking**: All sensitive fields (`password`, `pass`, `token`, `secret`, `authorization`, `emailPassword`, `cookie`, `session`, `bearer`, etc.) are automatically sanitized and masked with `[REDACTED]` by `LoggerService` across all log payloads.
 
 **Every new service folder added under `lib/` must be added to the table above (§2.1) in the same change set, including which `app/api/` routes consume it — see §11.4 (Lib Services Registry).**
 
@@ -317,7 +329,11 @@ All API responses use one consistent envelope so client-side error handling, pag
 
 ### 3.7 Idempotency & Middleware Verification Rule
 
-- **Idempotency for Mutating Routes**: Every route marked `Yes (key)` in `docs/Api.md` (e.g., `signup`, `create project`, `execute scenario`, `upload file`) MUST be wrapped with `idempotencyMiddleware` from `@/middleware/idempotency/idempotency.middleware`.
+- **Backend Idempotency for Mutating Routes**: Every route marked `Yes (key)` in `docs/Api.md` (e.g., `signup`, `create project`, `execute scenario`, `upload file`) MUST be wrapped with `idempotencyMiddleware` from `@/middleware/idempotency/idempotency.middleware`.
+- **Frontend Action Lifecycle Idempotency (NO Per-Click Key Generation)**:
+  - Idempotency keys MUST be bound to the **action/form attempt lifecycle**, NOT regenerated inside `handleSubmit()` on every button click.
+  - Use `useIdempotencyKey("action_prefix")` from `@/hooks/use-idempotency-key`. Retries and resubmissions for the same action attempt preserve the identical `idempotencyKey` so backend deduplication functions accurately.
+  - Call `resetKey()` ONLY after a successful response or when resetting/reopening the form for a brand new creation task.
 - **Middleware Composition & Verification**: Before creating or updating any API route handler (especially `POST`, `PATCH`, `DELETE` mutating operations), verify the exact set of required middlewares (`rateLimitMiddleware`, `idempotencyMiddleware`, `rbacMiddleware`) specified in `docs/Api.md` and compose them onto the handler.
 
 ---
@@ -447,11 +463,23 @@ _(Add a row every time a new shared component is created. Remove the row if the 
 
 Every folder under `components/pages/` must appear here:
 
-| Page    | Component File   | Export       | Purpose                                        |
-| :------ | :--------------- | :----------- | :--------------------------------------------- |
-| `login`       | `login/index.tsx`        | `LoginForm`                | Card grid login form with auth context integration |
-| `signup`      | `signup/index.tsx`       | `SignupForm`               | Card grid signup form with auth context integration |
-| `organization`| `organization/index.tsx` | `OrganizationPageComponent` | Team organization details, member roles, & admin edits |
+| Page Segment | File Path | Primary Export(s) | Description / Purpose |
+| :--- | :--- | :--- | :--- |
+| `login` | `login/index.tsx` | `LoginForm` | Card grid login form with auth context integration |
+| `signup` | `signup/index.tsx` | `SignupForm` | Card grid signup form with auth context integration |
+| `organization` | `organization/index.tsx` | `OrganizationPageComponent` | Team organization details, member roles, & admin edits |
+| `organization` | `organization/_components/organization-skeleton.tsx` | `OrganizationSkeleton` | Page skeleton loader during profile details fetch |
+| `organization` | `organization/_components/organization-form.tsx` | `OrganizationForm` | Organization profile & compliance edit form component |
+| `organization` | `organization/_components/organization-details.tsx` | `OrganizationDetails` | Organization profile details display component |
+| `members` | `members/index.tsx` | `MembersPageComponent` | Team organization members list, admin invites, & role management |
+| `members` | `members/_components/members-skeleton.tsx` | `MembersSkeleton` | Page skeleton loader during team members fetch |
+| `members` | `members/_components/invite-member-dialog.tsx` | `InviteMemberDialog` | Invite team member form dialog modal |
+| `members` | `members/_components/edit-role-dialog.tsx` | `EditRoleDialog` | Update team member role dialog modal |
+| `members` | `members/_components/remove-member-dialog.tsx` | `RemoveMemberDialog` | Remove team member confirmation alert dialog |
+| `accept-invite` | `accept-invite/index.tsx` | `AcceptInviteComponent` | Invitation acceptance handler card & flow routing |
+| `accept-invite` | `accept-invite/_components/accept-invite-skeleton.tsx` | `AcceptInviteSkeleton` | Skeleton loader during invite validation |
+| `dashboard` | `dashboard/index.tsx` | `DashboardPageComponent` | Dashboard telemetry metrics, Shadcn charts, & recent executions |
+| `dashboard` | `dashboard/_components/dashboard-skeleton.tsx` | `DashboardSkeleton` | Page skeleton loader during metrics fetch |
 
 _(Add a row every time a new page-specific component is created. Group rows by page for readability.)_
 
