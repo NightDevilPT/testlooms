@@ -147,16 +147,57 @@ export class ScenariosService {
   }
 
   /**
-   * List all test scenarios for a project
+   * List test scenarios for a project or user with pagination & sorting
    */
-  static async listScenarios(options: ScenarioFilterOptions): Promise<TestScenarioWithSteps[]> {
+  static async listScenarios(options: ScenarioFilterOptions): Promise<{
+    scenarios: TestScenarioWithSteps[];
+    totalItems: number;
+    totalPages: number;
+    metrics: {
+      totalScenarios: number;
+      readyCount: number;
+      draftCount: number;
+      totalStepsCount: number;
+    };
+  }> {
     try {
-      const { projectId, status, search, tag } = options;
+      const {
+        projectId,
+        userId,
+        status,
+        search,
+        tag,
+        page = 1,
+        pageSize = 12,
+        sortBy = "updated",
+      } = options;
+
+      const skip = (Math.max(1, page) - 1) * pageSize;
 
       const whereClause: Prisma.TestScenarioWhereInput = {
-        projectId,
         deletedAt: null,
       };
+
+      if (projectId) {
+        whereClause.projectId = projectId;
+      } else if (userId) {
+        whereClause.project = {
+          deletedAt: null,
+          OR: [
+            { userId },
+            {
+              organization: {
+                members: {
+                  some: {
+                    userId,
+                    deletedAt: null,
+                  },
+                },
+              },
+            },
+          ],
+        };
+      }
 
       if (status) {
         whereClause.status = status;
@@ -169,33 +210,113 @@ export class ScenariosService {
       }
 
       if (search && search.trim()) {
+        const searchStr = search.trim();
         whereClause.OR = [
-          { title: { contains: search, mode: "insensitive" } },
-          { description: { contains: search, mode: "insensitive" } },
+          { title: { contains: searchStr, mode: "insensitive" } },
+          { description: { contains: searchStr, mode: "insensitive" } },
+          { relativeRoute: { contains: searchStr, mode: "insensitive" } },
         ];
       }
 
-      const scenarios = await prisma.testScenario.findMany({
-        where: whereClause,
-        include: {
-          steps: {
-            where: { deletedAt: null },
-            orderBy: { stepOrder: "asc" },
-          },
-          project: {
-            select: {
-              id: true,
-              name: true,
-              baseUrl: true,
+      let orderByClause: Prisma.TestScenarioOrderByWithRelationInput = { updatedAt: "desc" };
+      if (sortBy === "title") {
+        orderByClause = { title: "asc" };
+      }
+
+      const baseUserWhere: Prisma.TestScenarioWhereInput = {
+        deletedAt: null,
+        ...(projectId
+          ? { projectId }
+          : userId
+          ? {
+              project: {
+                deletedAt: null,
+                OR: [
+                  { userId },
+                  {
+                    organization: {
+                      members: {
+                        some: {
+                          userId,
+                          deletedAt: null,
+                        },
+                      },
+                    },
+                  },
+                ],
+              },
+            }
+          : {}),
+      };
+
+      const [
+        scenarios,
+        totalItems,
+        readyCount,
+        draftCount,
+        totalStepsCount,
+      ] = await Promise.all([
+        prisma.testScenario.findMany({
+          where: whereClause,
+          skip,
+          take: pageSize,
+          include: {
+            steps: {
+              where: { deletedAt: null },
+              orderBy: { stepOrder: "asc" },
+            },
+            project: {
+              select: {
+                id: true,
+                name: true,
+                baseUrl: true,
+              },
             },
           },
-        },
-        orderBy: { updatedAt: "desc" },
-      });
+          orderBy: orderByClause,
+        }),
+        prisma.testScenario.count({ where: whereClause }),
+        prisma.testScenario.count({
+          where: {
+            ...baseUserWhere,
+            status: "READY",
+          },
+        }),
+        prisma.testScenario.count({
+          where: {
+            ...baseUserWhere,
+            status: "DRAFT",
+          },
+        }),
+        prisma.testStep.count({
+          where: {
+            deletedAt: null,
+            scenario: baseUserWhere,
+          },
+        }),
+      ]);
 
-      return scenarios.map((s) => this.mapPrismaToDomainScenario(s as unknown as PrismaScenarioResult));
+      const mapped = scenarios.map((s) => this.mapPrismaToDomainScenario(s as unknown as PrismaScenarioResult));
+
+      if (sortBy === "steps") {
+        mapped.sort((a, b) => (b.steps?.length || 0) - (a.steps?.length || 0));
+      }
+
+      const totalPages = Math.ceil(totalItems / pageSize) || 1;
+
+      return {
+        scenarios: mapped,
+        totalItems,
+        totalPages,
+        metrics: {
+          totalScenarios: totalItems,
+          readyCount,
+          draftCount,
+          totalStepsCount,
+        },
+      };
     } catch (error) {
-      logger.error(`Failed to list scenarios for project [${options.projectId}]`, "ScenariosService", error);
+      logger.error(`Failed to list scenarios`, "ScenariosService", error);
       throw error;
     }
   }
@@ -821,7 +942,7 @@ export class ScenariosService {
     projectId: string,
     userId?: string
   ): Promise<{ totalExecuted: number; executions: any[] }> {
-    const scenarios = await this.listScenarios({ projectId });
+    const { scenarios } = await this.listScenarios({ projectId, pageSize: 100 });
     if (scenarios.length === 0) {
       return { totalExecuted: 0, executions: [] };
     }

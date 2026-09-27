@@ -151,9 +151,10 @@ export function ScenarioCard({
       <div className="pt-3 border-t border-border flex items-center justify-between gap-2">
         <Button
           size="sm"
+          variant="default"
           disabled={isRunning}
           onClick={() => onRunClick && onRunClick(scenario)}
-          className="h-8 text-xs gap-1.5 font-semibold bg-emerald-600 hover:bg-emerald-700 text-white shrink-0"
+          className="h-8 text-xs gap-1.5 font-semibold shrink-0 cursor-pointer"
           title="Run scenario & record DB test execution"
         >
           {isRunning ? (

@@ -8,15 +8,30 @@ import {
   CreateScenarioPayload,
   UpdateScenarioPayload,
   RecordedStep,
+  ScenarioMetrics,
 } from "@/lib/scenarios-service/types";
 import { FailureEnvelope } from "@/lib/response-service/types";
 
 interface ScenariosContextType {
   scenarios: TestScenarioWithSteps[];
   loadedScenario: TestScenarioWithSteps | null;
+  metrics: ScenarioMetrics | null;
   isLoading: boolean;
   error: string | null;
+  page: number;
+  totalPages: number;
+  totalItems: number;
+  setPage: (page: number) => void;
   setLoadedScenario: React.Dispatch<React.SetStateAction<TestScenarioWithSteps | null>>;
+  fetchAllScenarios: (params?: {
+    projectId?: string;
+    status?: string;
+    search?: string;
+    tag?: string;
+    page?: number;
+    pageSize?: number;
+    sortBy?: string;
+  }) => Promise<TestScenarioWithSteps[]>;
   fetchScenarioById: (projectId: string, scenarioId: string) => Promise<TestScenarioWithSteps | null>;
   createScenario: (
     projectId: string,
@@ -55,6 +70,10 @@ interface ScenariosContextType {
     scenarioId: string,
     stepId: string
   ) => Promise<{ success: boolean; error?: string }>;
+  runScenario: (
+    projectId: string,
+    scenarioId: string
+  ) => Promise<{ success: boolean; data?: any; error?: string }>;
   reorderSteps: (
     projectId: string,
     scenarioId: string,
@@ -68,8 +87,72 @@ const ScenariosContext = React.createContext<ScenariosContextType | undefined>(u
 export function ScenariosProvider({ children }: { children: React.ReactNode }) {
   const [scenarios, setScenarios] = React.useState<TestScenarioWithSteps[]>([]);
   const [loadedScenario, setLoadedScenario] = React.useState<TestScenarioWithSteps | null>(null);
+  const [metrics, setMetrics] = React.useState<ScenarioMetrics | null>(null);
   const [isLoading, setIsLoading] = React.useState<boolean>(false);
   const [error, setError] = React.useState<string | null>(null);
+  const [page, setPage] = React.useState<number>(1);
+  const [totalPages, setTotalPages] = React.useState<number>(1);
+  const [totalItems, setTotalItems] = React.useState<number>(0);
+
+  const runScenario = async (projectId: string, scenarioId: string) => {
+    try {
+      const response = await apiClient.post(
+        `/api/projects/${projectId}/scenarios/${scenarioId}/run`
+      );
+      if (response.success && response.data) {
+        return { success: true, data: response.data };
+      } else {
+        const failure = response as FailureEnvelope;
+        return { success: false, error: failure.error?.message || "Failed to execute scenario" };
+      }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Execution failed";
+      return { success: false, error: msg };
+    }
+  };
+
+  const fetchAllScenarios = React.useCallback(
+    async (params?: {
+      projectId?: string;
+      status?: string;
+      search?: string;
+      tag?: string;
+      page?: number;
+      pageSize?: number;
+      sortBy?: string;
+    }) => {
+      setIsLoading(true);
+      setError(null);
+      try {
+        const response = await apiClient.get<TestScenarioWithSteps[]>("/api/scenarios", {
+          params,
+        });
+        if (response.success && Array.isArray(response.data)) {
+          const list = response.data as TestScenarioWithSteps[];
+          setScenarios(list);
+          if (response.pagination) {
+            setTotalPages(response.pagination.totalPages);
+            setTotalItems(response.pagination.totalItems);
+          } else {
+            setTotalItems(list.length);
+            setTotalPages(1);
+          }
+          if ("metrics" in response && response.metrics) {
+            setMetrics(response.metrics as unknown as ScenarioMetrics);
+          }
+          return list;
+        }
+        return [];
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : "Failed to fetch scenarios";
+        setError(msg);
+        return [];
+      } finally {
+        setIsLoading(false);
+      }
+    },
+    []
+  );
 
   const fetchScenarioById = React.useCallback(async (projectId: string, scenarioId: string) => {
     setIsLoading(true);
@@ -283,13 +366,20 @@ export function ScenariosProvider({ children }: { children: React.ReactNode }) {
       value={{
         scenarios,
         loadedScenario,
+        metrics,
         isLoading,
         error,
+        page,
+        totalPages,
+        totalItems,
+        setPage,
         setLoadedScenario,
+        fetchAllScenarios,
         fetchScenarioById,
         createScenario,
         updateScenario,
         deleteScenario,
+        runScenario,
         saveScenarioSteps,
         listSteps,
         updateStep,

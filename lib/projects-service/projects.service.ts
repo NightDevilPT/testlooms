@@ -31,7 +31,17 @@ export class ProjectsService {
   public static async getProjects(
     userId: string,
     params: ProjectQueryParams = {}
-  ): Promise<{ projects: ProjectItem[]; totalItems: number; totalPages: number }> {
+  ): Promise<{
+    projects: ProjectItem[];
+    totalItems: number;
+    totalPages: number;
+    metrics: {
+      totalProjects: number;
+      personalProjects: number;
+      companyProjects: number;
+      totalScenarios: number;
+    };
+  }> {
     const page = Math.max(1, params.page || 1);
     const pageSize = Math.min(50, Math.max(1, params.pageSize || 12));
     const skip = (page - 1) * pageSize;
@@ -81,9 +91,26 @@ export class ProjectsService {
       ];
     }
 
-    logger.info("Fetching projects list", { userId, page, pageSize, search: params.search });
+    logger.info("Fetching projects list with telemetry metrics", { userId, page, pageSize, search: params.search });
 
-    const [projects, totalItems] = await Promise.all([
+    const userOrOrgWhere: Prisma.ProjectWhereInput = {
+      deletedAt: null,
+      OR: [
+        { userId },
+        {
+          organization: {
+            members: {
+              some: {
+                userId,
+                deletedAt: null,
+              },
+            },
+          },
+        },
+      ],
+    };
+
+    const [projects, totalItems, personalProjects, companyProjects, totalScenarios] = await Promise.all([
       prisma.project.findMany({
         where,
         skip,
@@ -101,6 +128,32 @@ export class ProjectsService {
         },
       }),
       prisma.project.count({ where }),
+      prisma.project.count({
+        where: {
+          deletedAt: null,
+          userId,
+        },
+      }),
+      prisma.project.count({
+        where: {
+          deletedAt: null,
+          organizationId: { not: null },
+          organization: {
+            members: {
+              some: {
+                userId,
+                deletedAt: null,
+              },
+            },
+          },
+        },
+      }),
+      prisma.testScenario.count({
+        where: {
+          deletedAt: null,
+          project: userOrOrgWhere,
+        },
+      }),
     ]);
 
     const totalPages = Math.ceil(totalItems / pageSize) || 1;
@@ -109,6 +162,12 @@ export class ProjectsService {
       projects: projects as unknown as ProjectItem[],
       totalItems,
       totalPages,
+      metrics: {
+        totalProjects: totalItems,
+        personalProjects,
+        companyProjects,
+        totalScenarios,
+      },
     };
   }
 

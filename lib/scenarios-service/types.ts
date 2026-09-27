@@ -74,11 +74,22 @@ export interface UpdateScenarioPayload {
   steps?: RecordedStep[];
 }
 
+export interface ScenarioMetrics {
+  totalScenarios: number;
+  readyCount: number;
+  draftCount: number;
+  totalStepsCount: number;
+}
+
 export interface ScenarioFilterOptions {
-  projectId: string;
+  projectId?: string;
+  userId?: string;
   status?: ScenarioStatusType;
   tag?: string;
   search?: string;
+  page?: number;
+  pageSize?: number;
+  sortBy?: "updated" | "title" | "steps";
 }
 
 export interface TestScenarioWithSteps {

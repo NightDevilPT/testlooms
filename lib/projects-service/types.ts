@@ -53,6 +53,13 @@ export interface UpdateProjectInput {
   timeoutMs?: number;
 }
 
+export interface ProjectMetrics {
+  totalProjects: number;
+  personalProjects: number;
+  companyProjects: number;
+  totalScenarios: number;
+}
+
 export interface ProjectQueryParams {
   search?: string;
   ownership?: "ALL" | "PERSONAL" | "COMPANY";

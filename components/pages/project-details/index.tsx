@@ -400,7 +400,7 @@ export function ProjectDetailsPageComponent() {
                 variant="outline"
                 disabled={isRunningAllScenarios || !!runningScenarioId}
                 onClick={handleRunAllScenarios}
-                className="gap-2 font-semibold border-emerald-500/30 text-emerald-500 hover:bg-emerald-500/10"
+                className="gap-2 font-semibold cursor-pointer"
               >
                 {isRunningAllScenarios ? (
                   <>
@@ -417,7 +417,7 @@ export function ProjectDetailsPageComponent() {
               onClick={() => {
                 router.push(`/dashboard/projects/${project.id}/workspace`);
               }}
-              className="gap-2 font-medium"
+              className="gap-2 font-medium cursor-pointer"
             >
               <Plus className="h-4 w-4" /> Record New Scenario
             </Button>
@@ -456,7 +456,7 @@ export function ProjectDetailsPageComponent() {
         </div>
       </div>
 
-      {/* Telemetry Dashboard Metrics */}
+      {/* Telemetry Dashboard Metrics (Backend Powered) */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="rounded-xl border border-border bg-card p-4 space-y-2 shadow-xs">
           <div className="flex items-center justify-between text-muted-foreground">
@@ -466,7 +466,7 @@ export function ProjectDetailsPageComponent() {
             </div>
           </div>
           <p className="text-2xl font-bold text-foreground">
-            {totalScenariosCount}
+            {project._count?.scenarios ?? scenarios.length}
           </p>
           <p className="text-[11px] text-muted-foreground">Automated browser flows</p>
         </div>
@@ -479,7 +479,7 @@ export function ProjectDetailsPageComponent() {
             </div>
           </div>
           <p className="text-2xl font-bold text-foreground">
-            {project._count?.workflows || 0}
+            {project._count?.workflows ?? 0}
           </p>
           <p className="text-[11px] text-muted-foreground">Chained test suites</p>
         </div>
@@ -492,20 +492,20 @@ export function ProjectDetailsPageComponent() {
             </div>
           </div>
           <p className="text-2xl font-bold text-foreground">
-            {executions.length > 0 ? executions.length : (project._count?.executions || 0)}
+            {project._count?.executions ?? 0}
           </p>
           <p className="text-[11px] text-muted-foreground">Runs across environments</p>
         </div>
 
         <div className="rounded-xl border border-border bg-card p-4 space-y-2 shadow-xs">
           <div className="flex items-center justify-between text-muted-foreground">
-            <span className="text-xs font-medium">Environment Variables</span>
+            <span className="text-xs font-medium">Environment Profiles</span>
             <div className="h-8 w-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary">
               <SlidersHorizontal className="h-4 w-4" />
             </div>
           </div>
           <p className="text-2xl font-bold text-foreground">
-            {variablesList.length}
+            {project._count?.envProfiles ?? envProfiles.length}
           </p>
           <p className="text-[11px] text-muted-foreground">AES encrypted keys & secrets</p>
         </div>

@@ -50,7 +50,8 @@ export const GET = rateLimitMiddleware(
             hasPrevious: page > 1,
           },
           HttpStatus.OK,
-          request
+          request,
+          result.metrics
         );
       },
       { permissionKey: RbacPermission.EXECUTION_VIEW }

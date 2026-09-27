@@ -27,6 +27,7 @@ import {
 function ProjectsContent() {
   const {
     projects,
+    metrics,
     isLoading,
     error,
     searchQuery,
@@ -43,6 +44,12 @@ function ProjectsContent() {
   const [editingProject, setEditingProject] = React.useState<ProjectItem | null>(null);
   const [deletingProject, setDeletingProject] = React.useState<ProjectItem | null>(null);
 
+  // Backend Telemetry Metrics
+  const totalProjectsCount = metrics?.totalProjects ?? totalItems;
+  const personalCount = metrics?.personalProjects ?? 0;
+  const orgCount = metrics?.companyProjects ?? 0;
+  const totalScenariosCount = metrics?.totalScenarios ?? 0;
+
   return (
     <div className="space-y-6">
       {/* Page Title & Summary Header */}
@@ -56,9 +63,52 @@ function ProjectsContent() {
           </p>
         </div>
 
-        <Button onClick={() => setCreateOpen(true)} className="gap-2 shrink-0">
+        <Button onClick={() => setCreateOpen(true)} className="gap-2 shrink-0 cursor-pointer">
           <Plus className="h-4 w-4" /> Create New Project
         </Button>
+      </div>
+
+      {/* Analytics Summary Metric Cards (Backend Powered) */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="rounded-xl border border-border bg-card p-4 flex items-center gap-3.5 shadow-xs">
+          <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary shrink-0">
+            <FolderKanban className="h-5 w-5" />
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground font-medium">Total Projects</p>
+            <p className="text-2xl font-bold text-foreground">{totalProjectsCount}</p>
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-border bg-card p-4 flex items-center gap-3.5 shadow-xs">
+          <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary shrink-0">
+            <User className="h-5 w-5" />
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground font-medium">Personal Workspaces</p>
+            <p className="text-2xl font-bold text-foreground">{personalCount}</p>
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-border bg-card p-4 flex items-center gap-3.5 shadow-xs">
+          <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary shrink-0">
+            <Building2 className="h-5 w-5" />
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground font-medium">Organization Projects</p>
+            <p className="text-2xl font-bold text-foreground">{orgCount}</p>
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-border bg-card p-4 flex items-center gap-3.5 shadow-xs">
+          <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary shrink-0">
+            <Layers className="h-5 w-5" />
+          </div>
+          <div>
+            <p className="text-xs text-muted-foreground font-medium">Recorded Test Suites</p>
+            <p className="text-2xl font-bold text-foreground">{totalScenariosCount}</p>
+          </div>
+        </div>
       </div>
 
       {/* Filter & Search Bar */}

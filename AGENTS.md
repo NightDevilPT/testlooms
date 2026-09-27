@@ -505,9 +505,14 @@ Every folder under `components/pages/` must appear here:
 | `projects` | `projects/index.tsx` | `ProjectsPageContent` | Projects page layout, search/ownership filter, & state orchestrator |
 | `projects` | `projects/_components/projects-skeleton.tsx` | `ProjectsSkeleton` | Page skeleton loader during projects fetch |
 | `projects` | `projects/_components/project-card.tsx` | `ProjectCard` | Interactive project card displaying URL, browser parameters, & actions |
+| `projects` | `projects/_components/project-list-row.tsx` | `ProjectListRow` | Compact tabular list row for projects list view mode |
 | `projects` | `projects/_components/create-project-dialog.tsx` | `CreateProjectDialog` | Modal dialog for creating projects with time-based timeout & ping test |
 | `projects` | `projects/_components/edit-project-dialog.tsx` | `EditProjectDialog` | Modal dialog for editing project settings with time-based timeout |
 | `projects` | `projects/_components/delete-project-dialog.tsx` | `DeleteProjectDialog` | Soft-delete confirmation alert dialog for projects |
+| `scenarios` | `scenarios/index.tsx` | `ScenariosPageContent` | Global read-only test scenarios page layout, search/status/project filter, & test runner |
+| `scenarios` | `scenarios/_components/scenarios-skeleton.tsx` | `ScenariosSkeleton` | Page skeleton loader during scenarios fetch (grid & list mode) |
+| `scenarios` | `scenarios/_components/scenario-item-card.tsx` | `ScenarioItemCard` | Read-only scenario card with step inspector, route, status badges, & Run Test action |
+| `scenarios` | `scenarios/_components/scenario-list-row.tsx` | `ScenarioListRow` | Compact tabular list row for scenarios read-only table view mode with Run Test action |
 | `project-details` | `project-details/index.tsx` | `ProjectDetailsPageComponent` | Project workspace dashboard, metrics, scenarios list, & CTAs |
 | `project-details` | `project-details/_components/project-details-skeleton.tsx` | `ProjectDetailsSkeleton` | Skeleton loader during project details fetch |
 | `project-details` | `project-details/_components/scenario-card.tsx` | `ScenarioCard` | Interactive scenario card with route, step count, status badges, & actions |
@@ -520,6 +525,10 @@ Every folder under `components/pages/` must appear here:
 | `workspace` | `workspace/_components/studio-canvas-player.tsx` | `StudioCanvasPlayer` | Interactive live browser viewport player with resolution controls & click capture |
 | `workspace` | `workspace/_components/step-item-card.tsx` | `StepItemCard` | Step timeline card with Gherkin action type badges & move/delete controls |
 | `workspace` | `workspace/_components/save-scenario-dialog.tsx` | `SaveScenarioDialog` | Modal dialog for saving & persisting scenarios and steps to PostgreSQL |
+| `executions` | `executions/index.tsx` | `ExecutionsPageContent` | Global read-only test executions monitoring dashboard & log inspector |
+| `executions` | `executions/_components/executions-skeleton.tsx` | `ExecutionsSkeleton` | Page skeleton loader during executions fetch |
+| `executions` | `executions/_components/execution-card-row.tsx` | `ExecutionCardRow` | Execution log item card displaying status, duration, trigger type, & inspect CTA |
+| `executions` | `executions/_components/execution-detail-dialog.tsx` | `ExecutionDetailDialog` | Modal dialog for inspecting step-by-step execution results and healed selectors |
 
 _(Add a row every time a new page-specific component is created. Group rows by page for readability.)_
 
@@ -531,7 +540,7 @@ This expands on §2.1 — every folder under `lib/` must appear here, including 
 | :------------------------ | :---------------------------------- | :---------------------------------- | :--------------------------------- |
 | `lib/utils.ts`            | `utils.ts`                          | —                                   | Global (`cn()` helper)             |
 | `lib/projects-service/`   | `types.ts`, `validation.ts`, `projects.service.ts` | `/api/projects`, `/api/projects/[id]`, `/api/projects/ping`, `/api/projects/[id]/env-profiles` | `ProjectsContext`, `projects/index.tsx`, `project-details/index.tsx` |
-| `lib/scenarios-service/`  | `types.ts`, `validation.ts`, `scenarios.service.ts` | `/api/projects/[id]/scenarios`, `/api/projects/[id]/scenarios/[scenarioId]`, `/api/projects/[id]/scenarios/[scenarioId]/steps`, `/api/projects/[id]/scenarios/[scenarioId]/steps/[stepId]` | `project-details/index.tsx`, `workspace/index.tsx`, `save-scenario-dialog.tsx` |
+| `lib/scenarios-service/`  | `types.ts`, `validation.ts`, `scenarios.service.ts` | `/api/scenarios`, `/api/projects/[id]/scenarios`, `/api/projects/[id]/scenarios/[scenarioId]`, `/api/projects/[id]/scenarios/[scenarioId]/steps`, `/api/projects/[id]/scenarios/[scenarioId]/steps/[stepId]` | `scenarios/index.tsx`, `project-details/index.tsx`, `workspace/index.tsx`, `save-scenario-dialog.tsx` |
 | `lib/indexeddb-service/`  | `types.ts`, `indexeddb.service.ts`  | —                                   | `workspace/index.tsx` (IndexedDB draft auto-save) |
 | `lib/playwright-service/` | `types.ts`, `playwright.service.ts` | `/api/projects/[id]/recorder`      | `workspace/index.tsx`, Studio workspace |
 

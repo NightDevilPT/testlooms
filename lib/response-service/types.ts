@@ -109,11 +109,12 @@ export interface SingleResourceSuccessEnvelope<T> {
   meta: ResponseMeta;
 }
 
-export interface PaginatedListSuccessEnvelope<T> {
+export interface PaginatedListSuccessEnvelope<T, M = Record<string, unknown>> {
   success: true;
   statusCode: number;
   data: T[];
   pagination: PaginationInfo;
+  metrics?: M;
   meta: ResponseMeta;
 }
 

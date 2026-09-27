@@ -76,18 +76,20 @@ export class ResponseService {
     return this.ok(data, HttpStatus.CREATED, request);
   }
 
-  public static paginated<T>(
+  public static paginated<T, M = Record<string, unknown>>(
     data: T[],
     pagination: PaginationInfo,
     status: HttpStatus = HttpStatus.OK,
-    request?: Request
-  ): NextResponse<PaginatedListSuccessEnvelope<T>> {
+    request?: Request,
+    metrics?: M
+  ): NextResponse<PaginatedListSuccessEnvelope<T, M>> {
     const meta = this.createMeta(request);
-    const body: PaginatedListSuccessEnvelope<T> = {
+    const body: PaginatedListSuccessEnvelope<T, M> = {
       success: true,
       statusCode: status,
       data,
       pagination,
+      ...(metrics !== undefined ? { metrics } : {}),
       meta,
     };
     return NextResponse.json(body, { status });

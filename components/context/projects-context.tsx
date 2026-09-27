@@ -7,12 +7,14 @@ import {
   CreateProjectInput,
   UpdateProjectInput,
   PingUrlResult,
+  ProjectMetrics,
 } from "@/lib/projects-service/types";
 import { FailureEnvelope } from "@/lib/response-service/types";
 
 interface ProjectsContextType {
   projects: ProjectItem[];
   activeProject: ProjectItem | null;
+  metrics: ProjectMetrics | null;
   isLoading: boolean;
   error: string | null;
   searchQuery: string;
@@ -43,13 +45,22 @@ const ProjectsContext = React.createContext<ProjectsContextType | undefined>(und
 export function ProjectsProvider({ children }: { children: React.ReactNode }) {
   const [projects, setProjects] = React.useState<ProjectItem[]>([]);
   const [activeProject, setActiveProject] = React.useState<ProjectItem | null>(null);
+  const [metrics, setMetrics] = React.useState<ProjectMetrics | null>(null);
   const [isLoading, setIsLoading] = React.useState<boolean>(true);
   const [error, setError] = React.useState<string | null>(null);
   const [searchQuery, setSearchQuery] = React.useState<string>("");
+  const [debouncedSearch, setDebouncedSearch] = React.useState<string>("");
   const [ownershipFilter, setOwnershipFilter] = React.useState<"ALL" | "PERSONAL" | "COMPANY">("ALL");
   const [page, setPage] = React.useState<number>(1);
   const [totalPages, setTotalPages] = React.useState<number>(1);
   const [totalItems, setTotalItems] = React.useState<number>(0);
+
+  React.useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery.trim());
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
   const fetchProjects = React.useCallback(async () => {
     setIsLoading(true);
@@ -57,7 +68,7 @@ export function ProjectsProvider({ children }: { children: React.ReactNode }) {
     try {
       const response = await apiClient.get<ProjectItem[]>("/api/projects", {
         params: {
-          search: searchQuery || undefined,
+          search: debouncedSearch || undefined,
           ownership: ownershipFilter,
           page,
           pageSize: 12,
@@ -70,6 +81,9 @@ export function ProjectsProvider({ children }: { children: React.ReactNode }) {
           setTotalPages(response.pagination.totalPages);
           setTotalItems(response.pagination.totalItems);
         }
+        if ("metrics" in response && response.metrics) {
+          setMetrics(response.metrics as unknown as ProjectMetrics);
+        }
       } else {
         const failure = response as FailureEnvelope;
         const errMsg = failure.error?.message || "Failed to load projects";
@@ -81,7 +95,7 @@ export function ProjectsProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setIsLoading(false);
     }
-  }, [searchQuery, ownershipFilter, page]);
+  }, [debouncedSearch, ownershipFilter, page]);
 
   React.useEffect(() => {
     fetchProjects();
@@ -178,6 +192,7 @@ export function ProjectsProvider({ children }: { children: React.ReactNode }) {
       value={{
         projects,
         activeProject,
+        metrics,
         isLoading,
         error,
         searchQuery,

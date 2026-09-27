@@ -43,13 +43,14 @@ export const GET = rateLimitMiddleware(
         const search = url.searchParams.get("search") || undefined;
         const tag = url.searchParams.get("tag") || undefined;
 
-        const scenarios = await ScenariosService.listScenarios({
+        const result = await ScenariosService.listScenarios({
           projectId,
           search,
           tag,
+          pageSize: 100,
         });
 
-        return ResponseService.ok(scenarios, HttpStatus.OK, request);
+        return ResponseService.ok(result.scenarios, HttpStatus.OK, request);
       },
       { permissionKey: RbacPermission.SCENARIO_RECORD }
     )
