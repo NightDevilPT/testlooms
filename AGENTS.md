@@ -470,6 +470,8 @@ Every file in `components/shared/` must appear here:
 | `playwright-studio/studio-action-timeline.tsx`   | `StudioActionTimeline` | Internal to PlaywrightStudio    | Live recorded step inspector timeline                   |
 | `playwright-studio/studio-code-exporter.tsx`     | `StudioCodeExporter`   | Internal to PlaywrightStudio    | Multi-framework automated test code exporter modal      |
 | `onboarding-modal.tsx`                            | `OnboardingModal`      | Global (`RootProviders`)        | Non-dismissible account type & workspace setup modal    |
+| `form-dialog.tsx`                                 | `FormDialog`           | Global / Page dialogs           | Standardized form dialog container with header, scrollable body, and pinned action footer |
+| `confirm-dialog.tsx`                              | `ConfirmDialog`        | Global / Page alert dialogs     | Standardized confirmation alert dialog modal with semantic title, description, and action buttons |
 | `data-table.tsx`                                 | `DataTable`            | Members (`members/index.tsx`)   | Reusable data table with search, pagination, & semantic styling |
 
 
@@ -508,9 +510,16 @@ Every folder under `components/pages/` must appear here:
 | `projects` | `projects/_components/delete-project-dialog.tsx` | `DeleteProjectDialog` | Soft-delete confirmation alert dialog for projects |
 | `project-details` | `project-details/index.tsx` | `ProjectDetailsPageComponent` | Project workspace dashboard, metrics, scenarios list, & CTAs |
 | `project-details` | `project-details/_components/project-details-skeleton.tsx` | `ProjectDetailsSkeleton` | Skeleton loader during project details fetch |
+| `project-details` | `project-details/_components/scenario-card.tsx` | `ScenarioCard` | Interactive scenario card with route, step count, status badges, & actions |
+| `project-details` | `project-details/_components/delete-scenario-dialog.tsx` | `DeleteScenarioDialog` | Confirmation modal dialog for deleting test scenarios |
 | `project-details` | `project-details/_components/add-variable-dialog.tsx` | `AddVariableDialog` | Modal for adding Vercel-style environment variables with duplicate key check & ScrollArea |
 | `project-details` | `project-details/_components/edit-variable-dialog.tsx` | `EditVariableDialog` | Modal for editing individual environment variables with key collision validation |
 | `project-details` | `project-details/_components/delete-variable-dialog.tsx` | `DeleteVariableDialog` | Confirmation modal for deleting environment variable keys |
+| `workspace` | `workspace/index.tsx` | `WorkspacePage` | Studio workspace layout, live recorder state, & IndexedDB draft sync |
+| `workspace` | `workspace/_components/workspace-skeleton.tsx` | `WorkspaceSkeleton` | Page skeleton loader during studio workspace initialization |
+| `workspace` | `workspace/_components/studio-canvas-player.tsx` | `StudioCanvasPlayer` | Interactive live browser viewport player with resolution controls & click capture |
+| `workspace` | `workspace/_components/step-item-card.tsx` | `StepItemCard` | Step timeline card with Gherkin action type badges & move/delete controls |
+| `workspace` | `workspace/_components/save-scenario-dialog.tsx` | `SaveScenarioDialog` | Modal dialog for saving & persisting scenarios and steps to PostgreSQL |
 
 _(Add a row every time a new page-specific component is created. Group rows by page for readability.)_
 
@@ -522,7 +531,9 @@ This expands on §2.1 — every folder under `lib/` must appear here, including 
 | :------------------------ | :---------------------------------- | :---------------------------------- | :--------------------------------- |
 | `lib/utils.ts`            | `utils.ts`                          | —                                   | Global (`cn()` helper)             |
 | `lib/projects-service/`   | `types.ts`, `validation.ts`, `projects.service.ts` | `/api/projects`, `/api/projects/[id]`, `/api/projects/ping`, `/api/projects/[id]/env-profiles` | `ProjectsContext`, `projects/index.tsx`, `project-details/index.tsx` |
-| `lib/playwright-service/` | `types.ts`, `playwright.service.ts` | _(to be added as routes are built)_ | Studio workspace, execution runner |
+| `lib/scenarios-service/`  | `types.ts`, `validation.ts`, `scenarios.service.ts` | `/api/projects/[id]/scenarios`, `/api/projects/[id]/scenarios/[scenarioId]`, `/api/projects/[id]/scenarios/[scenarioId]/steps`, `/api/projects/[id]/scenarios/[scenarioId]/steps/[stepId]` | `project-details/index.tsx`, `workspace/index.tsx`, `save-scenario-dialog.tsx` |
+| `lib/indexeddb-service/`  | `types.ts`, `indexeddb.service.ts`  | —                                   | `workspace/index.tsx` (IndexedDB draft auto-save) |
+| `lib/playwright-service/` | `types.ts`, `playwright.service.ts` | `/api/projects/[id]/recorder`      | `workspace/index.tsx`, Studio workspace |
 
 _(Add a row every time a new `lib/<service-name>/` folder is created. Keep the "Consumed By" columns current as routes/components start calling the service — stale entries should be removed during review.)_
 

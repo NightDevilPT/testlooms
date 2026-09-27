@@ -2,24 +2,16 @@
 
 import * as React from "react";
 import apiClient from "@/lib/api-client/api-client.service";
+import { generateIdempotencyKey } from "@/lib/idempotency-service/types";
 import { EnvironmentProfileItem, EnvironmentVariableEntry } from "@/lib/projects-service/types";
 import { FailureEnvelope } from "@/lib/response-service/types";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from "@/components/ui/dialog";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Button } from "@/components/ui/button";
+import { FormDialog } from "@/components/shared/form-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import { toast } from "@/components/ui/toast";
 import {
   Plus,
-  Loader2,
   AlertTriangle,
   Eye,
   EyeOff,
@@ -86,7 +78,7 @@ export function AddVariableDialog({
     setIsSubmitting(true);
     setErrorMessage(null);
 
-    const idempotencyKey = `idempotent-add-var-${projectId}-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+    const idempotencyKey = generateIdempotencyKey("add_variable");
 
     const newVariable: EnvironmentVariableEntry = {
       key: cleanKey,
@@ -124,124 +116,115 @@ export function AddVariableDialog({
       setIsSubmitting(false);
 
       if (response.success && response.data) {
+        toast.add({
+          title: "Variable Added",
+          description: `Environment variable "${cleanKey}" added successfully.`,
+          type: "success",
+        });
         resetForm();
         onSuccess();
         onOpenChange(false);
       } else {
         const failure = response as FailureEnvelope;
-        setErrorMessage(failure.error?.message || "Failed to add environment variable");
+        const errText = failure.error?.message || "Failed to add environment variable";
+        toast.add({
+          title: "Error",
+          description: errText,
+          type: "error",
+        });
+        setErrorMessage(errText);
       }
     } catch (err: unknown) {
       setIsSubmitting(false);
       const message = err instanceof Error ? err.message : "Network error occurred";
+      toast.add({
+        title: "Error",
+        description: message,
+        type: "error",
+      });
       setErrorMessage(message);
     }
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[520px]">
-        <DialogHeader>
-          <DialogTitle className="text-xl font-bold flex items-center gap-2">
-            <Plus className="h-5 w-5 text-primary" /> Add Environment Variable
-          </DialogTitle>
-          <DialogDescription>
-            Add a key-value environment variable to this project with optional AES-256-GCM encryption.
-          </DialogDescription>
-        </DialogHeader>
+    <FormDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title="Add Environment Variable"
+      description="Add a key-value environment variable to this project with optional AES-256-GCM encryption."
+      icon={<Plus className="h-5 w-5 text-primary" />}
+      onSubmit={handleSubmit}
+      submitLabel="Add Variable"
+      isSubmitting={isSubmitting}
+      submitDisabled={Boolean(duplicateError)}
+      maxWidth="2xl"
+    >
+      {(errorMessage || duplicateError) && (
+        <div className="p-3 text-xs bg-destructive/10 text-destructive border border-destructive/20 rounded-lg flex items-start gap-2">
+          <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+          <span>{duplicateError || errorMessage}</span>
+        </div>
+      )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <ScrollArea className="max-h-[60vh] pr-3">
-            <div className="space-y-4 py-1">
-              {(errorMessage || duplicateError) && (
-                <div className="p-3 text-xs bg-destructive/10 text-destructive border border-destructive/20 rounded-lg flex items-start gap-2">
-                  <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
-                  <span>{duplicateError || errorMessage}</span>
-                </div>
-              )}
+      {/* Variable Key Input */}
+      <div className="space-y-1.5">
+        <Label htmlFor="add-var-key">
+          Variable Key <span className="text-destructive">*</span>
+        </Label>
+        <Input
+          id="add-var-key"
+          placeholder="e.g. API_SECRET_KEY, DATABASE_URL"
+          value={key}
+          onChange={(e) => setKey(e.target.value.toUpperCase())}
+          className="font-mono text-xs uppercase"
+          required
+        />
+      </div>
 
-              {/* Variable Key Input */}
-              <div className="space-y-1.5">
-                <Label htmlFor="add-var-key">
-                  Variable Key <span className="text-destructive">*</span>
-                </Label>
-                <Input
-                  id="add-var-key"
-                  placeholder="e.g. API_SECRET_KEY, DATABASE_URL"
-                  value={key}
-                  onChange={(e) => setKey(e.target.value.toUpperCase())}
-                  className="font-mono text-xs uppercase"
-                  required
-                />
-              </div>
-
-              {/* Variable Value Input */}
-              <div className="space-y-1.5">
-                <Label htmlFor="add-var-value">Variable Value</Label>
-                <div className="relative">
-                  <Input
-                    id="add-var-value"
-                    type={isSecret && !showValue ? "password" : "text"}
-                    placeholder="e.g. sk_test_51Mz..."
-                    value={value}
-                    onChange={(e) => setValue(e.target.value)}
-                    className="font-mono text-xs pr-9"
-                  />
-                  {isSecret && (
-                    <button
-                      type="button"
-                      onClick={() => setShowValue(!showValue)}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-1 transition-colors"
-                      title={showValue ? "Hide Value" : "Show Value"}
-                    >
-                      {showValue ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              {/* Secret / Secure Toggle */}
-              <div className="p-3 rounded-lg border border-border bg-muted/20 space-y-1">
-                <label className="inline-flex items-center gap-2 cursor-pointer select-none">
-                  <Checkbox
-                    checked={isSecret}
-                    onCheckedChange={(checked) => {
-                      setIsSecret(Boolean(checked));
-                      if (checked) setShowValue(false);
-                    }}
-                  />
-                  <span className="flex items-center gap-1.5 font-medium text-xs text-foreground">
-                    <Lock className="h-3.5 w-3.5 text-amber-500" /> Secure / Secret Variable
-                  </span>
-                </label>
-                <p className="text-[11px] text-muted-foreground pl-6">
-                  Encrypt value with AES-256-GCM in database and mask string (`••••••••`) in UI.
-                </p>
-              </div>
-            </div>
-          </ScrollArea>
-
-          <DialogFooter className="pt-2 border-t border-border">
-            <Button
+      {/* Variable Value Input */}
+      <div className="space-y-1.5">
+        <Label htmlFor="add-var-value">Variable Value</Label>
+        <div className="relative">
+          <Input
+            id="add-var-value"
+            type={isSecret && !showValue ? "password" : "text"}
+            placeholder="e.g. sk_test_51Mz..."
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            className="font-mono text-xs pr-9"
+          />
+          {isSecret && (
+            <button
               type="button"
-              variant="outline"
-              onClick={() => onOpenChange(false)}
-              disabled={isSubmitting}
+              onClick={() => setShowValue(!showValue)}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-1 transition-colors"
+              title={showValue ? "Hide Value" : "Show Value"}
             >
-              Cancel
-            </Button>
-            <Button type="submit" disabled={isSubmitting || Boolean(duplicateError)}>
-              {isSubmitting ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Adding...
-                </>
-              ) : (
-                "Add Variable"
-              )}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+              {showValue ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Secret / Secure Toggle */}
+      <div className="p-3 rounded-lg border border-border bg-muted/20 space-y-1">
+        <label className="inline-flex items-center gap-2 cursor-pointer select-none">
+          <Checkbox
+            checked={isSecret}
+            onCheckedChange={(checked) => {
+              setIsSecret(Boolean(checked));
+              if (checked) setShowValue(false);
+            }}
+          />
+          <span className="flex items-center gap-1.5 font-medium text-xs text-foreground">
+            <Lock className="h-3.5 w-3.5 text-amber-500" /> Secure / Secret Variable
+          </span>
+        </label>
+        <p className="text-[11px] text-muted-foreground pl-6">
+          Encrypt value with AES-256-GCM in database and mask string (`••••••••`) in UI.
+        </p>
+      </div>
+    </FormDialog>
   );
 }
+

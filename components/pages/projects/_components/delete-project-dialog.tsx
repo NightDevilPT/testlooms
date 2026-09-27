@@ -2,29 +2,23 @@
 
 import * as React from "react";
 import { useProjects } from "@/components/context/projects-context";
-import {
-  AlertDialog,
-  AlertDialogContent,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogCancel,
-  AlertDialogAction,
-} from "@/components/ui/alert-dialog";
+import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { ProjectItem } from "@/lib/projects-service/types";
-import { Loader2, Trash2 } from "lucide-react";
+import { toast } from "@/components/ui/toast";
+import { Trash2 } from "lucide-react";
 
 interface DeleteProjectDialogProps {
   project: ProjectItem | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onSuccess?: () => void;
 }
 
 export function DeleteProjectDialog({
   project,
   open,
   onOpenChange,
+  onSuccess,
 }: DeleteProjectDialogProps) {
   const { deleteProject } = useProjects();
   const [isDeleting, setIsDeleting] = React.useState(false);
@@ -35,40 +29,39 @@ export function DeleteProjectDialog({
     const result = await deleteProject(project.id);
     setIsDeleting(false);
     if (result.success) {
+      toast.add({
+        title: "Project Deleted",
+        description: `Project "${project.name}" has been deleted.`,
+        type: "success",
+      });
       onOpenChange(false);
+      onSuccess?.();
+    } else {
+      toast.add({
+        title: "Delete Failed",
+        description: result.error || "Failed to delete project.",
+        type: "error",
+      });
     }
   };
 
   return (
-    <AlertDialog open={open} onOpenChange={onOpenChange}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle className="flex items-center gap-2 text-destructive">
-            <Trash2 className="h-5 w-5" /> Delete Project
-          </AlertDialogTitle>
-          <AlertDialogDescription>
-            Are you sure you want to delete{" "}
-            <strong className="text-foreground font-semibold">"{project?.name}"</strong>?
-            This will soft-delete the project and archive all attached test scenarios and run history.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
-          <AlertDialogAction
-            onClick={handleDelete}
-            disabled={isDeleting}
-            className="bg-destructive hover:bg-destructive/90 text-destructive-foreground"
-          >
-            {isDeleting ? (
-              <>
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Deleting...
-              </>
-            ) : (
-              "Yes, Delete Project"
-            )}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+    <ConfirmDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title="Delete Project"
+      description={
+        <>
+          Are you sure you want to delete{" "}
+          <strong className="text-foreground font-semibold">"{project?.name}"</strong>? This will soft-delete the project and archive all attached test scenarios and run history.
+        </>
+      }
+      icon={<Trash2 className="h-5 w-5 text-destructive" />}
+      confirmLabel="Yes, Delete Project"
+      confirmVariant="destructive"
+      isConfirming={isDeleting}
+      onConfirm={handleDelete}
+    />
   );
 }
+

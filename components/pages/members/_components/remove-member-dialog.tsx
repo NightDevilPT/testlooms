@@ -4,16 +4,7 @@ import React from "react";
 import { OrganizationMemberResponse } from "@/lib/organizations-service/types";
 import { generateIdempotencyKey } from "@/lib/idempotency-service/types";
 import apiClient from "@/lib/api-client/api-client.service";
-import {
-  AlertDialog,
-  AlertDialogContent,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogCancel,
-  AlertDialogAction,
-} from "@/components/ui/alert-dialog";
+import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { toast } from "@/components/ui/toast";
 import { ShieldAlert } from "lucide-react";
 
@@ -24,14 +15,19 @@ export interface RemoveMemberDialogProps {
 }
 
 export function RemoveMemberDialog({ member, onOpenChange, onSuccess }: RemoveMemberDialogProps) {
+  const [isRemoving, setIsRemoving] = React.useState(false);
+
   const handleConfirmRemove = async () => {
     if (!member) return;
+    setIsRemoving(true);
     try {
       const idempotencyKey = generateIdempotencyKey("remove_member");
       const response = await apiClient.delete<{ message: string }>(
         `/api/organizations/members/${member.id}`,
         { idempotencyKey }
       );
+
+      setIsRemoving(false);
 
       if (response.success) {
         onOpenChange(false);
@@ -50,6 +46,7 @@ export function RemoveMemberDialog({ member, onOpenChange, onSuccess }: RemoveMe
         });
       }
     } catch {
+      setIsRemoving(false);
       toast.add({
         title: "Error",
         description: "An unexpected error occurred while removing member.",
@@ -59,25 +56,23 @@ export function RemoveMemberDialog({ member, onOpenChange, onSuccess }: RemoveMe
   };
 
   return (
-    <AlertDialog open={!!member} onOpenChange={onOpenChange}>
-      <AlertDialogContent className="sm:max-w-lg w-full bg-card border-border shadow-xl">
-        <AlertDialogHeader>
-          <AlertDialogTitle className="text-lg font-bold text-destructive flex items-center gap-2">
-            <ShieldAlert className="h-5 w-5" /> Remove Team Member?
-          </AlertDialogTitle>
-          <AlertDialogDescription className="text-sm text-muted-foreground">
-            Are you sure you want to remove <strong>{member?.invitedEmail}</strong> from your organization? They will lose access to all company projects and test suites.
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel onClick={() => onOpenChange(false)}>Cancel</AlertDialogCancel>
-          <AlertDialogAction onClick={handleConfirmRemove} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-            Confirm Remove
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+    <ConfirmDialog
+      open={!!member}
+      onOpenChange={onOpenChange}
+      title="Remove Team Member?"
+      description={
+        <>
+          Are you sure you want to remove <strong className="text-foreground font-semibold">{member?.invitedEmail}</strong> from your organization? They will lose access to all company projects and test suites.
+        </>
+      }
+      icon={<ShieldAlert className="h-5 w-5 text-destructive" />}
+      confirmLabel="Confirm Remove"
+      confirmVariant="destructive"
+      isConfirming={isRemoving}
+      onConfirm={handleConfirmRemove}
+    />
   );
 }
 
 export default RemoveMemberDialog;
+

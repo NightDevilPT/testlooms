@@ -124,11 +124,25 @@ export function DashboardPageComponent() {
 
   const { summary, dailyTrends, scenarioDistribution, recentExecutions } = data;
 
-  // Format daily dates for chart X-axis
-  const formattedDailyTrends = dailyTrends.map((item) => ({
-    ...item,
-    formattedDate: new Date(item.date).toLocaleDateString(undefined, { weekday: "short" }),
-  }));
+  // Format daily dates for chart X-axis (day-wise)
+  const todayStr = (() => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  })();
+
+  const formattedDailyTrends = dailyTrends.map((item) => {
+    const [y, m, d] = item.date.split("-").map(Number);
+    const dateObj = new Date(y, m - 1, d);
+    const isToday = item.date === todayStr;
+    const formattedDate = isToday
+      ? "Today"
+      : dateObj.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+
+    return {
+      ...item,
+      formattedDate,
+    };
+  });
 
   return (
     <div className="w-full px-1 space-y-6">

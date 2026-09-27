@@ -100,9 +100,9 @@ export function OnboardingModal() {
 
   return (
     <Dialog open={true}>
-      <DialogContent className="max-w-xl p-0 gap-0 overflow-hidden border-border bg-card shadow-2xl [&>button]:hidden">
+      <DialogContent className="max-w-2xl sm:max-w-2xl p-0 gap-0 overflow-hidden border-border bg-card text-card-foreground shadow-2xl rounded-2xl flex flex-col max-h-[85vh] [&>button]:hidden">
         {/* Header Branding */}
-        <div className="p-6 pb-4 bg-muted/40 border-b border-border space-y-2">
+        <div className="p-6 bg-muted/20 border-b border-border shrink-0 space-y-2">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 font-bold text-lg text-foreground">
               <span className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center text-primary-foreground shadow-sm">
@@ -118,123 +118,125 @@ export function OnboardingModal() {
             <h2 className="text-xl font-bold tracking-tight text-foreground">
               Choose Workspace Account Type
             </h2>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-muted-foreground mt-0.5">
               Select how you intend to use TestLoom to configure your default workspace.
             </p>
           </div>
         </div>
 
         {/* Form Body */}
-        <form onSubmit={handleSubmit} className="p-6 space-y-6">
-          {formError && (
-            <div role="alert" className="rounded-md bg-destructive/10 p-3 text-sm font-medium text-destructive">
-              {formError}
+        <form onSubmit={handleSubmit} className="flex flex-col flex-1 min-h-0">
+          <div className="p-6 space-y-6 overflow-y-auto flex-1">
+            {formError && (
+              <div role="alert" className="rounded-md bg-destructive/10 p-3 text-sm font-medium text-destructive">
+                {formError}
+              </div>
+            )}
+
+            {/* Account Type Selection Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Personal Workspace Card */}
+              <Card
+                className={`relative cursor-pointer p-4 transition-all duration-200 border-2 ${
+                  selectedType === "PERSONAL"
+                    ? "border-primary bg-primary/5 shadow-md"
+                    : "border-border bg-card hover:border-border/80"
+                }`}
+                onClick={() => setSelectedType("PERSONAL")}
+              >
+                <div className="flex items-start justify-between">
+                  <div className="h-9 w-9 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
+                    <User className="h-5 w-5" />
+                  </div>
+                  {selectedType === "PERSONAL" && (
+                    <span className="h-5 w-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center">
+                      <Check className="h-3 w-3" />
+                    </span>
+                  )}
+                </div>
+                <div className="mt-3 space-y-1">
+                  <h3 className="font-semibold text-sm text-foreground">Personal Account</h3>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    Individual QA or dev workspace for standalone test scenario recordings.
+                  </p>
+                </div>
+              </Card>
+
+              {/* Organization Account Card */}
+              <Card
+                className={`relative cursor-pointer p-4 transition-all duration-200 border-2 ${
+                  selectedType === "ORGANIZATION"
+                    ? "border-primary bg-primary/5 shadow-md"
+                    : "border-border bg-card hover:border-border/80"
+                }`}
+                onClick={() => setSelectedType("ORGANIZATION")}
+              >
+                <div className="flex items-start justify-between">
+                  <div className="h-9 w-9 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
+                    <Building2 className="h-5 w-5" />
+                  </div>
+                  {selectedType === "ORGANIZATION" && (
+                    <span className="h-5 w-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center">
+                      <Check className="h-3 w-3" />
+                    </span>
+                  )}
+                </div>
+                <div className="mt-3 space-y-1">
+                  <h3 className="font-semibold text-sm text-foreground">Organization</h3>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    Collaborative team workspace with RBAC member roles & shared projects.
+                  </p>
+                </div>
+              </Card>
             </div>
-          )}
 
-          {/* Account Type Selection Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Personal Workspace Card */}
-            <Card
-              className={`relative cursor-pointer p-4 transition-all duration-200 border-2 ${
-                selectedType === "PERSONAL"
-                  ? "border-primary bg-primary/5 shadow-md"
-                  : "border-border bg-card hover:border-border/80"
-              }`}
-              onClick={() => setSelectedType("PERSONAL")}
-            >
-              <div className="flex items-start justify-between">
-                <div className="h-9 w-9 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
-                  <User className="h-5 w-5" />
-                </div>
-                {selectedType === "PERSONAL" && (
-                  <span className="h-5 w-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center">
-                    <Check className="h-3 w-3" />
-                  </span>
-                )}
-              </div>
-              <div className="mt-3 space-y-1">
-                <h3 className="font-semibold text-sm text-foreground">Personal Account</h3>
-                <p className="text-xs text-muted-foreground leading-relaxed">
-                  Individual QA or dev workspace for standalone test scenario recordings.
-                </p>
-              </div>
-            </Card>
+            {/* Organization Details Form (If Organization Picked) */}
+            {selectedType === "ORGANIZATION" && (
+              <FieldGroup className="pt-2 border-t border-border space-y-4 animate-in fade-in duration-200">
+                <Field>
+                  <FieldLabel htmlFor="orgName">Organization Name</FieldLabel>
+                  <Input
+                    id="orgName"
+                    placeholder="e.g. Acme Corp QA"
+                    value={orgName}
+                    onChange={handleNameChange}
+                    required
+                  />
+                </Field>
 
-            {/* Organization Account Card */}
-            <Card
-              className={`relative cursor-pointer p-4 transition-all duration-200 border-2 ${
-                selectedType === "ORGANIZATION"
-                  ? "border-primary bg-primary/5 shadow-md"
-                  : "border-border bg-card hover:border-border/80"
-              }`}
-              onClick={() => setSelectedType("ORGANIZATION")}
-            >
-              <div className="flex items-start justify-between">
-                <div className="h-9 w-9 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
-                  <Building2 className="h-5 w-5" />
-                </div>
-                {selectedType === "ORGANIZATION" && (
-                  <span className="h-5 w-5 rounded-full bg-primary text-primary-foreground flex items-center justify-center">
-                    <Check className="h-3 w-3" />
-                  </span>
-                )}
-              </div>
-              <div className="mt-3 space-y-1">
-                <h3 className="font-semibold text-sm text-foreground">Organization</h3>
-                <p className="text-xs text-muted-foreground leading-relaxed">
-                  Collaborative team workspace with RBAC member roles & shared projects.
-                </p>
-              </div>
-            </Card>
+                <Field>
+                  <FieldLabel htmlFor="orgSlug">Workspace URL Slug (Auto-generated)</FieldLabel>
+                  <div className="flex items-center gap-1 text-xs text-muted-foreground mb-1 font-mono">
+                    <span>testloom.com/org/</span>
+                    <span className="text-primary font-semibold">{orgSlug || "your-slug"}</span>
+                  </div>
+                  <Input
+                    id="orgSlug"
+                    placeholder="acme-corp-qa"
+                    value={orgSlug}
+                    disabled
+                    className="bg-muted text-muted-foreground cursor-not-allowed font-mono opacity-90"
+                  />
+                  <FieldDescription>
+                    Auto-generated URL slug derived from your organization name.
+                  </FieldDescription>
+                </Field>
+              </FieldGroup>
+            )}
           </div>
 
-          {/* Organization Details Form (If Organization Picked) */}
-          {selectedType === "ORGANIZATION" && (
-            <FieldGroup className="pt-2 border-t border-border space-y-4 animate-in fade-in duration-200">
-              <Field>
-                <FieldLabel htmlFor="orgName">Organization Name</FieldLabel>
-                <Input
-                  id="orgName"
-                  placeholder="e.g. Acme Corp QA"
-                  value={orgName}
-                  onChange={handleNameChange}
-                  required
-                />
-              </Field>
-
-              <Field>
-                <FieldLabel htmlFor="orgSlug">Workspace URL Slug (Auto-generated)</FieldLabel>
-                <div className="flex items-center gap-1 text-xs text-muted-foreground mb-1 font-mono">
-                  <span>testloom.com/org/</span>
-                  <span className="text-primary font-semibold">{orgSlug || "your-slug"}</span>
-                </div>
-                <Input
-                  id="orgSlug"
-                  placeholder="acme-corp-qa"
-                  value={orgSlug}
-                  disabled
-                  className="bg-muted text-muted-foreground cursor-not-allowed font-mono opacity-90"
-                />
-                <FieldDescription>
-                  Auto-generated URL slug derived from your organization name.
-                </FieldDescription>
-              </Field>
-            </FieldGroup>
-          )}
-
           {/* Action Footer */}
-          <div className="pt-2 flex justify-end">
-            <Button type="submit" size="lg" className="w-full md:w-auto" disabled={isSubmitting}>
+          <div className="p-4 px-6 border-t border-border bg-muted/20 flex items-center justify-end shrink-0">
+            <Button type="submit" size="lg" className="w-full md:w-auto font-medium gap-2" disabled={isSubmitting}>
               {isSubmitting ? (
                 <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  <Loader2 className="h-4 w-4 animate-spin" />
                   Setting up workspace...
                 </>
               ) : (
                 <>
                   Continue to Dashboard
-                  <ArrowRight className="ml-2 h-4 w-4" />
+                  <ArrowRight className="h-4 w-4" />
                 </>
               )}
             </Button>

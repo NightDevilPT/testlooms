@@ -18,6 +18,20 @@ const badgeVariants = cva(
         ghost:
           "hover:bg-muted hover:text-muted-foreground dark:hover:bg-muted/50",
         link: "text-primary underline-offset-4 hover:underline",
+        // Predefined Status & Action Color Variants
+        success: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30",
+        warning: "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30",
+        info: "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/30",
+        purple: "bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/30",
+        cyan: "bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/30",
+        indigo: "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/30",
+        click: "bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/30",
+        type: "bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/30",
+        select: "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/30",
+        assert: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30",
+        scroll: "bg-zinc-500/10 text-zinc-600 dark:text-zinc-400 border-zinc-500/30",
+        upload: "bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/30",
+        keypress: "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/30",
       },
     },
     defaultVariants: {

@@ -2,24 +2,17 @@
 
 import * as React from "react";
 import apiClient from "@/lib/api-client/api-client.service";
+import { generateIdempotencyKey } from "@/lib/idempotency-service/types";
 import { EnvironmentProfileItem, EnvironmentVariableEntry } from "@/lib/projects-service/types";
 import { FailureEnvelope } from "@/lib/response-service/types";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from "@/components/ui/dialog";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { FormDialog } from "@/components/shared/form-dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import { toast } from "@/components/ui/toast";
 import {
   Pencil,
-  Loader2,
   Plus,
   Trash2,
   AlertTriangle,
@@ -113,7 +106,7 @@ export function EditEnvProfileDialog({
     setErrorMessage(null);
 
     // Form submit button idempotency key generation
-    const idempotencyKey = `idempotent-update-env-${profile.id}-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+    const idempotencyKey = generateIdempotencyKey("update_env_profile");
 
     const formattedVariables: EnvironmentVariableEntry[] = variables
       .filter((v) => v.key.trim().length > 0)
@@ -137,181 +130,171 @@ export function EditEnvProfileDialog({
       setIsSubmitting(false);
 
       if (response.success && response.data) {
+        toast.add({
+          title: "Profile Updated",
+          description: `Environment profile "${name.trim()}" updated successfully.`,
+          type: "success",
+        });
         onSuccess();
         onOpenChange(false);
       } else {
         const failure = response as FailureEnvelope;
-        setErrorMessage(failure.error?.message || "Failed to update environment profile");
+        const errText = failure.error?.message || "Failed to update environment profile";
+        toast.add({
+          title: "Update Failed",
+          description: errText,
+          type: "error",
+        });
+        setErrorMessage(errText);
       }
     } catch (err: unknown) {
       setIsSubmitting(false);
       const message = err instanceof Error ? err.message : "Network error occurred";
+      toast.add({
+        title: "Update Error",
+        description: message,
+        type: "error",
+      });
       setErrorMessage(message);
     }
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[620px]">
-        <DialogHeader>
-          <DialogTitle className="text-xl font-bold flex items-center gap-2">
-            <Pencil className="h-5 w-5 text-primary" /> Edit Environment Profile
-          </DialogTitle>
-          <DialogDescription>
-            Update target cluster details, variable values, and secret masking settings.
-          </DialogDescription>
-        </DialogHeader>
+    <FormDialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title="Edit Environment Profile"
+      description="Update target cluster details, variable values, and secret masking settings."
+      icon={<Pencil className="h-5 w-5 text-primary" />}
+      onSubmit={handleSubmit}
+      submitLabel="Save Changes"
+      isSubmitting={isSubmitting}
+      maxWidth="2xl"
+    >
+      {errorMessage && (
+        <div className="p-3 text-xs bg-destructive/10 text-destructive border border-destructive/20 rounded-lg flex items-start gap-2">
+          <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+          <span>{errorMessage}</span>
+        </div>
+      )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <ScrollArea className="max-h-[60vh] pr-3">
-            <div className="space-y-4 py-1">
-              {errorMessage && (
-                <div className="p-3 text-xs bg-destructive/10 text-destructive border border-destructive/20 rounded-lg flex items-start gap-2">
-                  <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
-                  <span>{errorMessage}</span>
-                </div>
-              )}
+      {/* Profile Name */}
+      <div className="space-y-1.5">
+        <Label htmlFor="edit-env-profile-name">
+          Profile Name <span className="text-destructive">*</span>
+        </Label>
+        <Input
+          id="edit-env-profile-name"
+          placeholder="e.g. Staging Cluster US-East"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          required
+        />
+      </div>
 
-              {/* Profile Name */}
-              <div className="space-y-1.5">
-                <Label htmlFor="edit-env-profile-name">
-                  Profile Name <span className="text-destructive">*</span>
-                </Label>
+      {/* Set as Default Checkbox */}
+      <div className="flex items-center space-x-2 pt-1">
+        <Checkbox
+          id="edit-is-default-env"
+          checked={isDefault}
+          onCheckedChange={(checked) => setIsDefault(Boolean(checked))}
+        />
+        <Label htmlFor="edit-is-default-env" className="text-xs font-medium cursor-pointer">
+          Set as Active Default Environment for test runs
+        </Label>
+      </div>
+
+      {/* Environment Key-Value Variables */}
+      <div className="space-y-2 pt-2">
+        <div className="flex items-center justify-between">
+          <Label className="text-xs font-semibold">Environment Variables</Label>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={handleAddVariable}
+            className="h-7 text-xs gap-1 text-primary hover:text-primary/90"
+          >
+            <Plus className="h-3.5 w-3.5" /> Add Variable
+          </Button>
+        </div>
+
+        <div className="space-y-2.5">
+          {variables.map((row, idx) => (
+            <div
+              key={idx}
+              className="p-3 rounded-lg border border-border bg-muted/20 space-y-2"
+            >
+              <div className="flex items-center gap-2">
+                {/* Key Input */}
                 <Input
-                  id="edit-env-profile-name"
-                  placeholder="e.g. Staging Cluster US-East"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  required
+                  placeholder="KEY (e.g. API_SECRET)"
+                  value={row.key}
+                  onChange={(e) => handleVariableChange(idx, "key", e.target.value)}
+                  className="font-mono text-xs flex-1"
                 />
-              </div>
 
-              {/* Set as Default Checkbox */}
-              <div className="flex items-center space-x-2 pt-1">
-                <Checkbox
-                  id="edit-is-default-env"
-                  checked={isDefault}
-                  onCheckedChange={(checked) => setIsDefault(Boolean(checked))}
-                />
-                <Label htmlFor="edit-is-default-env" className="text-xs font-medium cursor-pointer">
-                  Set as Active Default Environment for test runs
-                </Label>
-              </div>
+                {/* Value Input */}
+                <div className="relative flex-1">
+                  <Input
+                    type={row.isSecret && !row.showValue ? "password" : "text"}
+                    placeholder="Value"
+                    value={row.value}
+                    onChange={(e) => handleVariableChange(idx, "value", e.target.value)}
+                    className="font-mono text-xs pr-8"
+                  />
+                  {row.isSecret && (
+                    <button
+                      type="button"
+                      onClick={() => toggleShowValue(idx)}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors p-1"
+                      title={row.showValue ? "Hide Value" : "Show Value"}
+                    >
+                      {row.showValue ? (
+                        <EyeOff className="h-3.5 w-3.5" />
+                      ) : (
+                        <Eye className="h-3.5 w-3.5" />
+                      )}
+                    </button>
+                  )}
+                </div>
 
-              {/* Environment Key-Value Variables */}
-              <div className="space-y-2 pt-2">
-                <div className="flex items-center justify-between">
-                  <Label className="text-xs font-semibold">Environment Variables</Label>
+                {/* Remove Action */}
+                {variables.length > 1 && (
                   <Button
                     type="button"
                     variant="ghost"
-                    size="sm"
-                    onClick={handleAddVariable}
-                    className="h-7 text-xs gap-1 text-primary hover:text-primary/90"
+                    size="icon"
+                    onClick={() => handleRemoveVariable(idx)}
+                    className="h-8 w-8 text-muted-foreground hover:text-destructive shrink-0"
                   >
-                    <Plus className="h-3.5 w-3.5" /> Add Variable
+                    <Trash2 className="h-4 w-4" />
                   </Button>
-                </div>
+                )}
+              </div>
 
-                <div className="space-y-2.5">
-                  {variables.map((row, idx) => (
-                    <div
-                      key={idx}
-                      className="p-3 rounded-lg border border-border bg-muted/20 space-y-2"
-                    >
-                      <div className="flex items-center gap-2">
-                        {/* Key Input */}
-                        <Input
-                          placeholder="KEY (e.g. API_SECRET)"
-                          value={row.key}
-                          onChange={(e) => handleVariableChange(idx, "key", e.target.value)}
-                          className="font-mono text-xs flex-1"
-                        />
-
-                        {/* Value Input */}
-                        <div className="relative flex-1">
-                          <Input
-                            type={row.isSecret && !row.showValue ? "password" : "text"}
-                            placeholder="Value"
-                            value={row.value}
-                            onChange={(e) => handleVariableChange(idx, "value", e.target.value)}
-                            className="font-mono text-xs pr-8"
-                          />
-                          {row.isSecret && (
-                            <button
-                              type="button"
-                              onClick={() => toggleShowValue(idx)}
-                              className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors p-1"
-                              title={row.showValue ? "Hide Value" : "Show Value"}
-                            >
-                              {row.showValue ? (
-                                <EyeOff className="h-3.5 w-3.5" />
-                              ) : (
-                                <Eye className="h-3.5 w-3.5" />
-                              )}
-                            </button>
-                          )}
-                        </div>
-
-                        {/* Remove Action */}
-                        {variables.length > 1 && (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleRemoveVariable(idx)}
-                            className="h-8 w-8 text-muted-foreground hover:text-destructive shrink-0"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        )}
-                      </div>
-
-                      {/* Secret Checkbox Option (Secret Variable) */}
-                      <div className="flex items-center justify-between text-xs text-muted-foreground pt-0.5">
-                        <label className="inline-flex items-center gap-1.5 cursor-pointer select-none">
-                          <Checkbox
-                            checked={row.isSecret}
-                            onCheckedChange={(checked) => {
-                              handleVariableChange(idx, "isSecret", Boolean(checked));
-                              if (checked) {
-                                handleVariableChange(idx, "showValue", false);
-                              }
-                            }}
-                          />
-                          <span className="flex items-center gap-1 font-medium text-[11px]">
-                            <Lock className="h-3 w-3 text-amber-500" /> Secure / Secret Variable (Masked UI)
-                          </span>
-                        </label>
-                      </div>
-                    </div>
-                  ))}
-                </div>
+              {/* Secret Checkbox Option (Secret Variable) */}
+              <div className="flex items-center justify-between text-xs text-muted-foreground pt-0.5">
+                <label className="inline-flex items-center gap-1.5 cursor-pointer select-none">
+                  <Checkbox
+                    checked={row.isSecret}
+                    onCheckedChange={(checked) => {
+                      handleVariableChange(idx, "isSecret", Boolean(checked));
+                      if (checked) {
+                        handleVariableChange(idx, "showValue", false);
+                      }
+                    }}
+                  />
+                  <span className="flex items-center gap-1 font-medium text-[11px]">
+                    <Lock className="h-3 w-3 text-amber-500" /> Secure / Secret Variable (Masked UI)
+                  </span>
+                </label>
               </div>
             </div>
-          </ScrollArea>
-
-          <DialogFooter className="pt-2 border-t border-border">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => onOpenChange(false)}
-              disabled={isSubmitting}
-            >
-              Cancel
-            </Button>
-            <Button type="submit" disabled={isSubmitting}>
-              {isSubmitting ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" /> Saving...
-                </>
-              ) : (
-                "Save Changes"
-              )}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+          ))}
+        </div>
+      </div>
+    </FormDialog>
   );
 }
+

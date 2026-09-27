@@ -1,6 +1,7 @@
 import * as React from "react";
 import type { Metadata } from "next";
 import { ProjectsProvider } from "@/components/context/projects-context";
+import { ScenariosProvider } from "@/components/context/scenarios-context";
 
 export const metadata: Metadata = {
   title: "Projects & Workspaces | TestLoom",
@@ -8,5 +9,10 @@ export const metadata: Metadata = {
 };
 
 export default function ProjectsLayout({ children }: { children: React.ReactNode }) {
-  return <ProjectsProvider>{children}</ProjectsProvider>;
+  return (
+    <ProjectsProvider>
+      <ScenariosProvider>{children}</ScenariosProvider>
+    </ProjectsProvider>
+  );
 }
+

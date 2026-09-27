@@ -36,6 +36,8 @@ export interface ClickedElementInfo {
   timestamp: string;
 }
 
+import { SelectorMetadata } from '../scenarios-service/types';
+
 export interface ActionLog {
   id: string;
   type: ActionType;
@@ -53,6 +55,9 @@ export interface ActionLog {
   expectedValue?: string;
   key?: string;
   url?: string;
+  attributes?: Record<string, string>;
+  selectorMetadata?: SelectorMetadata;
+  defaultSelector?: 'css' | 'xpath' | 'id' | 'dataTestId' | 'text';
   timestamp: string;
 }
 
@@ -66,12 +71,14 @@ export interface PlaywrightSession {
   pageTitle: string;
   isLoading: boolean;
   isClosed?: boolean;
+  isFastForwarding?: boolean;
   viewport: { width: number; height: number };
   latestClickedElement: ClickedElementInfo | null;
   actionLogs: ActionLog[];
   cachedFrame: string | null;
   lastUpdated: number;
   frameUpdateTimer?: NodeJS.Timeout;
+  listeners?: Set<(data: any) => void>;
 }
 
 export type SupportedFramework = 'playwright' | 'cypress' | 'selenium' | 'cucumber';

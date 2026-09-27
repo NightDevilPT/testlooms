@@ -22,8 +22,8 @@ import {
 } from "./validation";
 
 const JWT_SECRET = process.env.JWT_SECRET || "testloom_jwt_secret_dev_key_2026";
-const ACCESS_TOKEN_EXPIRATION = "12m"; // 12 minutes
-const REFRESH_TOKEN_EXPIRATION = "15d"; // 15 days
+const ACCESS_TOKEN_EXPIRATION: any = process.env.ACCESS_TOKEN_EXPIRATION_MINUTES || "12m"; // 12 minutes
+const REFRESH_TOKEN_EXPIRATION: any = process.env.REFRESH_TOKEN_EXPIRATION_MINUTES || "15d"; // 15 days
 const ACCESS_TOKEN_COOKIE_NAME = "access_token";
 
 export class AuthService {

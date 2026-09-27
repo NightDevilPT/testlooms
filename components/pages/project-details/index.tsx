@@ -9,6 +9,7 @@ import {
   EnvironmentProfileItem,
   EnvironmentVariableEntry,
 } from "@/lib/projects-service/types";
+import { TestScenarioWithSteps } from "@/lib/scenarios-service/types";
 import { decomposeTimeoutMs } from "@/lib/projects-service/validation";
 import { ProjectDetailsSkeleton } from "./_components/project-details-skeleton";
 import { EditProjectDialog } from "@/components/pages/projects/_components/edit-project-dialog";
@@ -16,9 +17,21 @@ import { DeleteProjectDialog } from "@/components/pages/projects/_components/del
 import { AddVariableDialog } from "./_components/add-variable-dialog";
 import { EditVariableDialog } from "./_components/edit-variable-dialog";
 import { DeleteVariableDialog } from "./_components/delete-variable-dialog";
+import { ScenarioCard } from "./_components/scenario-card";
+import { DeleteScenarioDialog } from "./_components/delete-scenario-dialog";
 import { FailureEnvelope } from "@/lib/response-service/types";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { toast } from "@/components/ui/toast";
+import { cn } from "@/lib/utils";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   ArrowLeft,
   Globe,
@@ -42,6 +55,8 @@ import {
   Copy,
   Check,
   ShieldCheck,
+  Search,
+  Filter,
 } from "lucide-react";
 
 export function ProjectDetailsPageComponent() {
@@ -51,13 +66,24 @@ export function ProjectDetailsPageComponent() {
 
   const [project, setProject] = React.useState<ProjectItem | null>(null);
   const [envProfiles, setEnvProfiles] = React.useState<EnvironmentProfileItem[]>([]);
+  const [scenarios, setScenarios] = React.useState<TestScenarioWithSteps[]>([]);
+  
   const [isLoading, setIsLoading] = React.useState(true);
   const [isLoadingProfiles, setIsLoadingProfiles] = React.useState(false);
+  const [isLoadingScenarios, setIsLoadingScenarios] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+
+  // Scenario Search & Filter States
+  const [searchQuery, setSearchQuery] = React.useState("");
+  const [statusFilter, setStatusFilter] = React.useState<string>("ALL");
 
   // Project Settings Dialogs
   const [editOpen, setEditOpen] = React.useState(false);
   const [deleteOpen, setDeleteOpen] = React.useState(false);
+
+  // Scenario Dialogs
+  const [deleteScenarioOpen, setDeleteScenarioOpen] = React.useState(false);
+  const [targetScenario, setTargetScenario] = React.useState<TestScenarioWithSteps | null>(null);
 
   // Environment Variable Dialogs & States
   const [addVarOpen, setAddVarOpen] = React.useState(false);
@@ -111,10 +137,113 @@ export function ProjectDetailsPageComponent() {
     }
   }, [projectId]);
 
+  const fetchScenarios = React.useCallback(async () => {
+    if (!projectId) return;
+    setIsLoadingScenarios(true);
+    try {
+      const response = await apiClient.get<TestScenarioWithSteps[]>(
+        `/api/projects/${projectId}/scenarios`
+      );
+      if (response.success && Array.isArray(response.data)) {
+        setScenarios(response.data as TestScenarioWithSteps[]);
+      }
+    } catch {
+      // Silent error fallback
+    } finally {
+      setIsLoadingScenarios(false);
+    }
+  }, [projectId]);
+
+  const [executions, setExecutions] = React.useState<any[]>([]);
+  const [isLoadingExecutions, setIsLoadingExecutions] = React.useState(false);
+  const [runningScenarioId, setRunningScenarioId] = React.useState<string | null>(null);
+  const [isRunningAllScenarios, setIsRunningAllScenarios] = React.useState(false);
+
+  const fetchExecutions = React.useCallback(async () => {
+    if (!projectId) return;
+    setIsLoadingExecutions(true);
+    try {
+      const response = await apiClient.get<any[]>(`/api/projects/${projectId}/executions`);
+      if (response.success && Array.isArray(response.data)) {
+        setExecutions(response.data);
+      }
+    } catch {
+      // Silent error fallback
+    } finally {
+      setIsLoadingExecutions(false);
+    }
+  }, [projectId]);
+
+  const handleRunScenario = async (sc: TestScenarioWithSteps) => {
+    if (runningScenarioId || isRunningAllScenarios) return;
+    setRunningScenarioId(sc.id);
+    try {
+      toast.add({ title: "Running Scenario...", description: `Executing "${sc.title}" live.` });
+      const res = await apiClient.post<any>(`/api/projects/${projectId}/scenarios/${sc.id}/run`, {});
+      if (res.success && res.data) {
+        const execStatus = res.data.execution?.status || "PASSED";
+        toast.add({
+          title: `Scenario Execution ${execStatus}`,
+          description: `Finished executing "${sc.title}". Telemetry saved to DB.`,
+        });
+        fetchExecutions();
+        fetchProjectDetails();
+      } else {
+        const failure = res as FailureEnvelope;
+        toast.add({
+          title: "Execution Failed",
+          description: failure.error?.message || "Failed to execute scenario.",
+        });
+      }
+    } catch {
+      toast.add({
+        title: "Execution Error",
+        description: "An unexpected error occurred while running the scenario.",
+      });
+    } finally {
+      setRunningScenarioId(null);
+    }
+  };
+
+  const handleRunAllScenarios = async () => {
+    if (runningScenarioId || isRunningAllScenarios || scenarios.length === 0) return;
+    setIsRunningAllScenarios(true);
+    try {
+      toast.add({
+        title: "Running All Scenarios...",
+        description: `Executing ${scenarios.length} scenarios sequentially in order.`,
+      });
+      const res = await apiClient.post<any>(`/api/projects/${projectId}/executions`, {});
+      if (res.success && res.data) {
+        toast.add({
+          title: "All Scenarios Executed Successfully",
+          description: `Completed ${res.data.totalExecuted || scenarios.length} scenario execution runs.`,
+        });
+        fetchExecutions();
+        fetchProjectDetails();
+      } else {
+        const failure = res as FailureEnvelope;
+        toast.add({
+          title: "Execution Error",
+          description: failure.error?.message || "Failed to execute all scenarios.",
+        });
+      }
+    } catch {
+      toast.add({
+        title: "Execution Error",
+        description: "An error occurred while executing all scenarios.",
+      });
+    } finally {
+      setIsRunningAllScenarios(false);
+    }
+  };
+
   React.useEffect(() => {
     fetchProjectDetails();
     fetchEnvProfiles();
-  }, [fetchProjectDetails, fetchEnvProfiles]);
+    fetchScenarios();
+    fetchExecutions();
+  }, [fetchProjectDetails, fetchEnvProfiles, fetchScenarios, fetchExecutions]);
 
   const toggleSecretVisibility = (varKey: string) => {
     setRevealedSecrets((prev) => ({
@@ -143,6 +272,11 @@ export function ProjectDetailsPageComponent() {
     }
   };
 
+  const handleDeleteScenarioClick = (sc: TestScenarioWithSteps) => {
+    setTargetScenario(sc);
+    setDeleteScenarioOpen(true);
+  };
+
   // Derive the main environment profile and variables array
   const mainProfile = envProfiles.length > 0 ? envProfiles[0] : null;
   const variablesList: EnvironmentVariableEntry[] = React.useMemo(() => {
@@ -159,6 +293,23 @@ export function ProjectDetailsPageComponent() {
     }
     return [];
   }, [mainProfile]);
+
+  // Filter scenarios based on search and status dropdown
+  const filteredScenarios = React.useMemo(() => {
+    return scenarios.filter((sc) => {
+      const q = searchQuery.trim().toLowerCase();
+      const matchesSearch =
+        !q ||
+        sc.title.toLowerCase().includes(q) ||
+        (sc.description && sc.description.toLowerCase().includes(q)) ||
+        sc.relativeRoute.toLowerCase().includes(q) ||
+        sc.tags.some((t) => t.toLowerCase().includes(q));
+
+      const matchesStatus = statusFilter === "ALL" || sc.status === statusFilter;
+
+      return matchesSearch && matchesStatus;
+    });
+  }, [scenarios, searchQuery, statusFilter]);
 
   if (isLoading) {
     return <ProjectDetailsSkeleton />;
@@ -181,6 +332,7 @@ export function ProjectDetailsPageComponent() {
 
   const { value: timeoutVal, unit: timeoutUnit } = decomposeTimeoutMs(project.timeoutMs);
   const formattedTimeout = `${timeoutVal}${timeoutUnit === "seconds" ? "s" : "m"}`;
+  const totalScenariosCount = scenarios.length > 0 ? scenarios.length : (project._count?.scenarios || 0);
 
   return (
     <div className="space-y-6">
@@ -241,15 +393,33 @@ export function ProjectDetailsPageComponent() {
             )}
           </div>
 
-          {/* Primary Actions (Create Scenario CTA) */}
+          {/* Primary Actions (Run All Scenarios & Record New Scenario CTA) */}
           <div className="flex items-center gap-3 shrink-0">
+            {scenarios.length > 0 && (
+              <Button
+                variant="outline"
+                disabled={isRunningAllScenarios || !!runningScenarioId}
+                onClick={handleRunAllScenarios}
+                className="gap-2 font-semibold border-emerald-500/30 text-emerald-500 hover:bg-emerald-500/10"
+              >
+                {isRunningAllScenarios ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" /> Running All Scenarios...
+                  </>
+                ) : (
+                  <>
+                    <Play className="h-4 w-4 fill-current" /> Run All Scenarios ({scenarios.length})
+                  </>
+                )}
+              </Button>
+            )}
             <Button
               onClick={() => {
                 router.push(`/dashboard/projects/${project.id}/workspace`);
               }}
               className="gap-2 font-medium"
             >
-              <Plus className="h-4 w-4" /> Create Scenario
+              <Plus className="h-4 w-4" /> Record New Scenario
             </Button>
           </div>
         </div>
@@ -296,7 +466,7 @@ export function ProjectDetailsPageComponent() {
             </div>
           </div>
           <p className="text-2xl font-bold text-foreground">
-            {project._count?.scenarios || 0}
+            {totalScenariosCount}
           </p>
           <p className="text-[11px] text-muted-foreground">Automated browser flows</p>
         </div>
@@ -322,7 +492,7 @@ export function ProjectDetailsPageComponent() {
             </div>
           </div>
           <p className="text-2xl font-bold text-foreground">
-            {project._count?.executions || 0}
+            {executions.length > 0 ? executions.length : (project._count?.executions || 0)}
           </p>
           <p className="text-[11px] text-muted-foreground">Runs across environments</p>
         </div>
@@ -350,7 +520,7 @@ export function ProjectDetailsPageComponent() {
             onClick={() => setActiveTab("scenarios")}
             className="h-8 text-xs gap-1.5"
           >
-            <Layers className="h-3.5 w-3.5" /> Scenarios ({project._count?.scenarios || 0})
+            <Layers className="h-3.5 w-3.5" /> Scenarios ({totalScenariosCount})
           </Button>
           <Button
             size="sm"
@@ -358,7 +528,7 @@ export function ProjectDetailsPageComponent() {
             onClick={() => setActiveTab("runs")}
             className="h-8 text-xs gap-1.5"
           >
-            <FileCheck2 className="h-3.5 w-3.5" /> Execution History ({project._count?.executions || 0})
+            <FileCheck2 className="h-3.5 w-3.5" /> Execution History ({executions.length})
           </Button>
           <Button
             size="sm"
@@ -373,62 +543,236 @@ export function ProjectDetailsPageComponent() {
         {/* Tab Content */}
         <div className="p-6">
           {activeTab === "scenarios" && (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
+            <div className="space-y-6">
+              {/* Header & Main Controls */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
-                  <h3 className="text-base font-semibold text-foreground">Recorded Scenarios</h3>
+                  <h3 className="text-base font-semibold text-foreground">Recorded Test Scenarios</h3>
                   <p className="text-xs text-muted-foreground">
-                    Automated Playwright browser recording scripts for {project.name}.
+                    Automated Playwright browser recording scripts for {project.name}. Scenarios run in designated sequence order.
                   </p>
                 </div>
-                <Button
-                  size="sm"
-                  onClick={() => router.push(`/dashboard/projects/${project.id}/workspace`)}
-                  className="gap-1.5 text-xs"
-                >
-                  <Plus className="h-3.5 w-3.5" /> Record New Scenario
-                </Button>
+                <div className="flex items-center gap-2 shrink-0">
+                  {scenarios.length > 0 && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={isRunningAllScenarios || !!runningScenarioId}
+                      onClick={handleRunAllScenarios}
+                      className="gap-1.5 text-xs border-emerald-500/30 text-emerald-500 hover:bg-emerald-500/10 font-semibold"
+                    >
+                      {isRunningAllScenarios ? (
+                        <>
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" /> Running All...
+                        </>
+                      ) : (
+                        <>
+                          <Play className="h-3.5 w-3.5 fill-current" /> Run All Scenarios ({scenarios.length})
+                        </>
+                      )}
+                    </Button>
+                  )}
+                  <Button
+                    size="sm"
+                    onClick={() => router.push(`/dashboard/projects/${project.id}/workspace`)}
+                    className="gap-1.5 text-xs"
+                  >
+                    <Plus className="h-3.5 w-3.5" /> Record New Scenario
+                  </Button>
+                </div>
               </div>
 
-              {/* Placeholder Empty Scenarios Card */}
-              <div className="flex flex-col items-center justify-center py-12 px-4 rounded-xl border border-dashed border-border bg-background text-center space-y-3">
-                <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center text-primary">
-                  <Layers className="h-6 w-6" />
+              {/* Search & Status Filters */}
+              {scenarios.length > 0 && (
+                <div className="flex flex-col sm:flex-row items-center gap-3">
+                  <div className="relative flex-1 w-full">
+                    <Search className="absolute left-3 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+                    <Input
+                      placeholder="Search scenarios by title, route, tag..."
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      className="pl-9 h-9 text-xs"
+                    />
+                  </div>
+
+                  <div className="w-full sm:w-[180px]">
+                    <Select value={statusFilter} onValueChange={(val) => setStatusFilter(val || "ALL")}>
+                      <SelectTrigger className="h-9 text-xs">
+                        <div className="flex items-center gap-1.5">
+                          <Filter className="h-3.5 w-3.5 text-muted-foreground" />
+                          <SelectValue placeholder="Filter by status" />
+                        </div>
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="ALL">All Statuses</SelectItem>
+                        <SelectItem value="READY">Ready</SelectItem>
+                        <SelectItem value="DRAFT">Draft</SelectItem>
+                        <SelectItem value="DEPRECATED">Deprecated</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
-                <div className="max-w-md space-y-1">
-                  <h4 className="text-sm font-semibold text-foreground">No Scenarios Recorded Yet</h4>
-                  <p className="text-xs text-muted-foreground">
-                    Launch the visual browser recorder to capture click, type, and assertion steps against <code className="font-mono bg-muted px-1 py-0.5 rounded">{project.baseUrl}</code>.
-                  </p>
+              )}
+
+              {/* Loading State */}
+              {isLoadingScenarios ? (
+                <div className="py-12 text-center text-xs text-muted-foreground flex items-center justify-center gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin text-primary" /> Loading recorded scenarios...
                 </div>
-                <Button
-                  size="sm"
-                  onClick={() => router.push(`/dashboard/projects/${project.id}/workspace`)}
-                  className="gap-1.5 text-xs mt-2"
-                >
-                  <Play className="h-3.5 w-3.5 fill-current" /> Open Playwright Studio Recorder
-                </Button>
-              </div>
+              ) : scenarios.length === 0 ? (
+                /* Zero Scenarios Empty State Card */
+                <div className="flex flex-col items-center justify-center py-12 px-4 rounded-xl border border-dashed border-border bg-background text-center space-y-3">
+                  <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center text-primary">
+                    <Layers className="h-6 w-6" />
+                  </div>
+                  <div className="max-w-md space-y-1">
+                    <h4 className="text-sm font-semibold text-foreground">No Scenarios Recorded Yet</h4>
+                    <p className="text-xs text-muted-foreground">
+                      Launch the visual browser recorder to capture click, type, and assertion steps against <code className="font-mono bg-muted px-1 py-0.5 rounded text-[11px]">{project.baseUrl}</code>.
+                    </p>
+                  </div>
+                  <Button
+                    size="sm"
+                    onClick={() => router.push(`/dashboard/projects/${project.id}/workspace`)}
+                    className="gap-1.5 text-xs mt-2"
+                  >
+                    <Play className="h-3.5 w-3.5 fill-current" /> Open Playwright Studio Recorder
+                  </Button>
+                </div>
+              ) : filteredScenarios.length === 0 ? (
+                /* Search No Results State */
+                <div className="py-12 text-center text-xs text-muted-foreground space-y-2 border border-dashed border-border rounded-xl">
+                  <p>No scenarios found matching &quot;{searchQuery}&quot;.</p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setSearchQuery("");
+                      setStatusFilter("ALL");
+                    }}
+                    className="h-7 text-xs"
+                  >
+                    Clear Filters
+                  </Button>
+                </div>
+              ) : (
+                /* Scenarios Grid with Order # and Run Test Action */
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {filteredScenarios.map((sc, idx) => (
+                    <ScenarioCard
+                      key={sc.id}
+                      projectId={project.id}
+                      scenario={sc}
+                      orderIndex={idx + 1}
+                      isRunning={runningScenarioId === sc.id || isRunningAllScenarios}
+                      onRunClick={handleRunScenario}
+                      onDeleteClick={handleDeleteScenarioClick}
+                    />
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
           {activeTab === "runs" && (
             <div className="space-y-4">
-              <div>
-                <h3 className="text-base font-semibold text-foreground">Recent Test Runs</h3>
-                <p className="text-xs text-muted-foreground">
-                  History of manual, scheduled, and CI/CD execution runs for this project.
-                </p>
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-base font-semibold text-foreground">Test Execution History</h3>
+                  <p className="text-xs text-muted-foreground">
+                    Telemetry logs and results for all manual, scheduled, and CI/CD runs.
+                  </p>
+                </div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={fetchExecutions}
+                  className="h-8 text-xs gap-1.5"
+                >
+                  <Loader2 className={cn("h-3.5 w-3.5", isLoadingExecutions && "animate-spin")} /> Refresh History
+                </Button>
               </div>
 
-              <div className="flex flex-col items-center justify-center py-12 px-4 rounded-xl border border-dashed border-border bg-background text-center space-y-3">
-                <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center text-primary">
-                  <FileCheck2 className="h-6 w-6" />
+              {isLoadingExecutions ? (
+                <div className="py-12 text-center text-xs text-muted-foreground flex items-center justify-center gap-2">
+                  <Loader2 className="h-4 w-4 animate-spin text-primary" /> Loading execution history...
                 </div>
-                <p className="text-xs text-muted-foreground">
-                  No execution runs recorded yet. Executions will appear here after triggering test scenarios.
-                </p>
-              </div>
+              ) : executions.length > 0 ? (
+                <div className="overflow-x-auto w-full border border-border rounded-xl">
+                  <table className="w-full text-left text-sm border-collapse">
+                    <thead>
+                      <tr className="border-b border-border bg-muted/30 text-xs uppercase font-semibold text-muted-foreground">
+                        <th className="py-3 px-4">Scenario / Target</th>
+                        <th className="py-3 px-4">Trigger</th>
+                        <th className="py-3 px-4">Status</th>
+                        <th className="py-3 px-4">Duration</th>
+                        <th className="py-3 px-4">Steps Breakdown</th>
+                        <th className="py-3 px-4">Executed At</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border">
+                      {executions.map((exec: any) => (
+                        <tr key={exec.id} className="hover:bg-muted/20 transition-colors">
+                          <td className="py-3 px-4 font-semibold text-foreground">
+                            {exec.scenario?.title || exec.workflow?.title || "Full Scenario Suite"}
+                          </td>
+                          <td className="py-3 px-4">
+                            <Badge variant="outline" className="text-[11px] font-mono uppercase bg-muted/50">
+                              {exec.triggerType}
+                            </Badge>
+                          </td>
+                          <td className="py-3 px-4">
+                            {exec.status === "PASSED" && (
+                              <Badge className="bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 font-semibold text-xs gap-1">
+                                PASSED
+                              </Badge>
+                            )}
+                            {exec.status === "FAILED" && (
+                              <Badge className="bg-destructive/10 text-destructive border border-destructive/20 font-semibold text-xs gap-1">
+                                FAILED
+                              </Badge>
+                            )}
+                            {exec.status === "RUNNING" && (
+                              <Badge className="bg-sky-500/10 text-sky-500 border border-sky-500/20 font-semibold text-xs gap-1">
+                                RUNNING
+                              </Badge>
+                            )}
+                          </td>
+                          <td className="py-3 px-4 font-mono text-xs text-muted-foreground">
+                            {exec.durationMs ? `${(exec.durationMs / 1000).toFixed(1)}s` : "—"}
+                          </td>
+                          <td className="py-3 px-4 font-mono text-xs">
+                            <span className="text-emerald-500 font-bold">{exec.passedSteps}</span>
+                            <span className="text-muted-foreground"> / {exec.totalSteps}</span>
+                            {exec.healedSteps > 0 && (
+                              <span className="ml-2 text-amber-500 text-[11px] font-semibold">
+                                ({exec.healedSteps} Healed)
+                              </span>
+                            )}
+                          </td>
+                          <td className="py-3 px-4 text-xs text-muted-foreground font-mono">
+                            {new Date(exec.createdAt).toLocaleString(undefined, {
+                              month: "short",
+                              day: "numeric",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center py-12 px-4 rounded-xl border border-dashed border-border bg-background text-center space-y-3">
+                  <div className="h-12 w-12 rounded-full bg-primary/10 flex items-center justify-center text-primary">
+                    <FileCheck2 className="h-6 w-6" />
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    No execution runs recorded yet. Click &quot;Run Test&quot; on any scenario to execute and record telemetry.
+                  </p>
+                </div>
+              )}
             </div>
           )}
 
@@ -506,7 +850,7 @@ export function ProjectDetailsPageComponent() {
                                   title="Copy Variable Key"
                                 >
                                   {isKeyCopied ? (
-                                    <Check className="h-3.5 w-3.5 text-emerald-500" />
+                                    <Check className="h-3.5 w-3.5 text-primary" />
                                   ) : (
                                     <Copy className="h-3.5 w-3.5" />
                                   )}
@@ -547,7 +891,7 @@ export function ProjectDetailsPageComponent() {
                                   title="Copy Value"
                                 >
                                   {isValueCopied ? (
-                                    <Check className="h-3.5 w-3.5 text-emerald-500" />
+                                    <Check className="h-3.5 w-3.5 text-primary" />
                                   ) : (
                                     <Copy className="h-3.5 w-3.5" />
                                   )}
@@ -560,16 +904,16 @@ export function ProjectDetailsPageComponent() {
                               {entry.isSecret ? (
                                 <Badge
                                   variant="outline"
-                                  className="text-[11px] gap-1 border-amber-500/30 text-amber-600 bg-amber-500/10 dark:text-amber-400 font-medium"
+                                  className="text-[11px] gap-1 border-border text-foreground bg-accent font-medium"
                                 >
-                                  <Lock className="h-3 w-3" /> Secret
+                                  <Lock className="h-3 w-3 text-primary" /> Secret
                                 </Badge>
                               ) : (
                                 <Badge
                                   variant="outline"
                                   className="text-[11px] gap-1 border-border text-muted-foreground bg-muted/40 font-medium"
                                 >
-                                  <ShieldCheck className="h-3 w-3 text-emerald-500" /> Plain
+                                  <ShieldCheck className="h-3 w-3 text-primary" /> Plain
                                 </Badge>
                               )}
                             </td>
@@ -628,9 +972,19 @@ export function ProjectDetailsPageComponent() {
       <DeleteProjectDialog
         project={project}
         open={deleteOpen}
-        onOpenChange={(open) => {
-          setDeleteOpen(open);
-          if (!open) router.push("/dashboard/projects");
+        onOpenChange={setDeleteOpen}
+        onSuccess={() => router.push("/dashboard/projects")}
+      />
+
+      {/* Delete Scenario Dialog */}
+      <DeleteScenarioDialog
+        projectId={project.id}
+        scenario={targetScenario}
+        open={deleteScenarioOpen}
+        onOpenChange={setDeleteScenarioOpen}
+        onSuccess={() => {
+          fetchScenarios();
+          fetchProjectDetails();
         }}
       />
 
