@@ -78,12 +78,21 @@ interface RecorderResponse {
 	steps?: RecordedStep[];
 }
 
+interface EnvironmentProfileItem {
+	id: string;
+	name: string;
+	isDefault: boolean;
+	variables: Array<{ key: string; value: string; isSecret: boolean }>;
+}
+
 export function WorkspacePage({ projectId }: WorkspacePageProps) {
 	const router = useRouter();
 	const searchParams = useSearchParams();
 	const scenarioId = searchParams?.get("scenarioId") || null;
 
 	const [project, setProject] = React.useState<ProjectData | null>(null);
+	const [envProfiles, setEnvProfiles] = React.useState<EnvironmentProfileItem[]>([]);
+	const [selectedEnvId, setSelectedEnvId] = React.useState<string>("default");
 	const [loadedScenario, setLoadedScenario] =
 		React.useState<TestScenarioWithSteps | null>(null);
 	const [isLoadingProject, setIsLoadingProject] = React.useState(true);
@@ -180,6 +189,25 @@ export function WorkspacePage({ projectId }: WorkspacePageProps) {
 					}
 					if (projData.defaultViewportHeight) {
 						setViewportHeight(projData.defaultViewportHeight);
+					}
+
+					// Fetch project environment profiles
+					try {
+						const envRes = await apiClient.get<EnvironmentProfileItem[]>(
+							`/api/projects/${projectId}/env-profiles`,
+						);
+						if (isMounted && envRes.data) {
+							const profiles = (Array.isArray(envRes.data)
+								? envRes.data
+								: [envRes.data]) as unknown as EnvironmentProfileItem[];
+							setEnvProfiles(profiles);
+							const defaultEnv = profiles.find((e) => e.isDefault);
+							if (defaultEnv) {
+								setSelectedEnvId(defaultEnv.id);
+							}
+						}
+					} catch {
+						// Profile fetch fallback
 					}
 
 					// Check if editing a defined existing scenario
@@ -434,6 +462,18 @@ export function WorkspacePage({ projectId }: WorkspacePageProps) {
 		}
 	};
 
+	// Active variables resolved from currently selected environment
+	const activeEnvVariables = React.useMemo(() => {
+		if (selectedEnvId === "default") {
+			const def = envProfiles.find((e) => e.isDefault);
+			if (def) return def.variables;
+			if (envProfiles.length > 0) return envProfiles[0].variables;
+			return [];
+		}
+		const selected = envProfiles.find((e) => e.id === selectedEnvId);
+		return selected ? selected.variables : [];
+	}, [selectedEnvId, envProfiles]);
+
 	// Replay Recorded Steps in Chromium Browser
 	const handleReplayScenario = async () => {
 		if (steps.length === 0 || isReplaying) return;
@@ -446,6 +486,12 @@ export function WorkspacePage({ projectId }: WorkspacePageProps) {
 					action: "replay",
 					sessionId,
 					steps,
+					environmentId:
+						selectedEnvId !== "default"
+							? selectedEnvId
+							: envProfiles.find((e) => e.isDefault)?.id ||
+								envProfiles[0]?.id ||
+								undefined,
 				},
 			);
 
@@ -753,6 +799,31 @@ export function WorkspacePage({ projectId }: WorkspacePageProps) {
 
 				{/* Action Controls */}
 				<div className="flex items-center gap-2">
+					{/* Environment Selector Dropdown */}
+					<div className="flex items-center gap-1.5 shrink-0">
+						<Select
+							value={selectedEnvId}
+							onValueChange={(val) => {
+								if (val) setSelectedEnvId(val);
+							}}
+						>
+							<SelectTrigger className="h-9 min-w-[130px] max-w-[200px] text-xs font-medium bg-background border-border gap-1.5">
+								<Globe className="h-3.5 w-3.5 text-primary shrink-0" />
+								<SelectValue placeholder="Environment" />
+							</SelectTrigger>
+							<SelectContent>
+								<SelectItem value="default" className="text-xs">
+									Project Base
+								</SelectItem>
+								{envProfiles.map((env) => (
+									<SelectItem key={env.id} value={env.id} className="text-xs">
+										{env.name} {env.isDefault ? "(Default)" : ""}
+									</SelectItem>
+								))}
+							</SelectContent>
+						</Select>
+					</div>
+
 					{isDraftRestored && steps.length > 0 && !loadedScenario && (
 						<div className="flex items-center gap-1.5 bg-muted/60 border border-border px-2 py-0.5 rounded-lg hidden sm:flex">
 							<Badge
@@ -1241,6 +1312,7 @@ export function WorkspacePage({ projectId }: WorkspacePageProps) {
 											onUpdateStep={(updated) =>
 												handleUpdateStep(idx, updated)
 											}
+											availableEnvVariables={activeEnvVariables}
 										/>
 									))}
 								</div>

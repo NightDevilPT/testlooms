@@ -72,7 +72,8 @@ interface ScenariosContextType {
   ) => Promise<{ success: boolean; error?: string }>;
   runScenario: (
     projectId: string,
-    scenarioId: string
+    scenarioId: string,
+    environmentId?: string
   ) => Promise<{ success: boolean; data?: any; error?: string }>;
   reorderSteps: (
     projectId: string,
@@ -94,10 +95,11 @@ export function ScenariosProvider({ children }: { children: React.ReactNode }) {
   const [totalPages, setTotalPages] = React.useState<number>(1);
   const [totalItems, setTotalItems] = React.useState<number>(0);
 
-  const runScenario = async (projectId: string, scenarioId: string) => {
+  const runScenario = async (projectId: string, scenarioId: string, environmentId?: string) => {
     try {
       const response = await apiClient.post(
-        `/api/projects/${projectId}/scenarios/${scenarioId}/run`
+        `/api/projects/${projectId}/scenarios/${scenarioId}/run`,
+        environmentId ? { environmentId } : {}
       );
       if (response.success && response.data) {
         return { success: true, data: response.data };

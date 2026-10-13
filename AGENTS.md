@@ -473,6 +473,7 @@ Every file in `components/shared/` must appear here:
 | `form-dialog.tsx`                                 | `FormDialog`           | Global / Page dialogs           | Standardized form dialog container with header, scrollable body, and pinned action footer |
 | `confirm-dialog.tsx`                              | `ConfirmDialog`        | Global / Page alert dialogs     | Standardized confirmation alert dialog modal with semantic title, description, and action buttons |
 | `data-table.tsx`                                 | `DataTable`            | Members (`members/index.tsx`)   | Reusable data table with search, pagination, & semantic styling |
+| `pattern-builder-dialog.tsx`                    | `PatternBuilderDialog` | Studio Workspace / Project Pages| Interactive dynamic pattern & mask builder with live preview & presets |
 
 
 _(Add a row every time a new shared component is created. Remove the row if the component is deleted.)_
@@ -529,6 +530,7 @@ Every folder under `components/pages/` must appear here:
 | `executions` | `executions/_components/executions-skeleton.tsx` | `ExecutionsSkeleton` | Page skeleton loader during executions fetch |
 | `executions` | `executions/_components/execution-card-row.tsx` | `ExecutionCardRow` | Execution log item card displaying status, duration, trigger type, & inspect CTA |
 | `executions` | `executions/_components/execution-detail-dialog.tsx` | `ExecutionDetailDialog` | Modal dialog for inspecting step-by-step execution results and healed selectors |
+| `home` | `home/index.tsx` | `HomePage` | Enterprise product overview, architecture specification & code transpiler |
 
 _(Add a row every time a new page-specific component is created. Group rows by page for readability.)_
 

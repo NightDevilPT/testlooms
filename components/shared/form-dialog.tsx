@@ -81,7 +81,7 @@ export function FormDialog({
 
         {/* Scrollable Form Body */}
         <form onSubmit={onSubmit} className="flex flex-col flex-1 min-h-0">
-          <ScrollArea className="flex-1 p-6">
+          <ScrollArea className="flex-1 p-6 overflow-auto">
             <div className="space-y-4">{children}</div>
           </ScrollArea>
 

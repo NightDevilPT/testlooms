@@ -5,6 +5,9 @@ CREATE TYPE "UserRole" AS ENUM ('ADMIN', 'QA_ENGINEER', 'VIEWER');
 CREATE TYPE "UserStatus" AS ENUM ('ACTIVE', 'INACTIVE', 'SUSPENDED', 'PENDING_VERIFICATION');
 
 -- CreateEnum
+CREATE TYPE "AccountType" AS ENUM ('PENDING', 'PERSONAL', 'ORGANIZATION');
+
+-- CreateEnum
 CREATE TYPE "OtpPurpose" AS ENUM ('LOGIN', 'EMAIL_VERIFICATION', 'PASSWORD_RESET');
 
 -- CreateEnum
@@ -115,6 +118,20 @@ CREATE TABLE "organizations" (
     "slug" TEXT NOT NULL,
     "logoUrl" TEXT,
     "plan" TEXT NOT NULL DEFAULT 'FREE',
+    "gstin" TEXT,
+    "pan" TEXT,
+    "cin" TEXT,
+    "addressLine1" TEXT,
+    "addressLine2" TEXT,
+    "city" TEXT,
+    "state" TEXT,
+    "postalCode" TEXT,
+    "country" TEXT,
+    "website" TEXT,
+    "contactEmail" TEXT,
+    "contactPhone" TEXT,
+    "industry" TEXT,
+    "companySize" TEXT,
     "createdAt" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "createdBy" UUID,
     "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -147,6 +164,8 @@ CREATE TABLE "org_invites" (
     "id" UUID NOT NULL DEFAULT gen_random_uuid(),
     "organizationId" UUID NOT NULL,
     "email" TEXT NOT NULL,
+    "firstName" TEXT,
+    "lastName" TEXT,
     "role" "UserRole" NOT NULL DEFAULT 'VIEWER',
     "token" TEXT NOT NULL,
     "invitedById" UUID,
@@ -175,6 +194,7 @@ CREATE TABLE "projects" (
     "defaultViewportWidth" INTEGER NOT NULL DEFAULT 1280,
     "defaultViewportHeight" INTEGER NOT NULL DEFAULT 800,
     "headless" BOOLEAN NOT NULL DEFAULT true,
+    "timeoutMs" INTEGER NOT NULL DEFAULT 30000,
     "createdAt" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "createdBy" UUID,
     "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -271,6 +291,8 @@ CREATE TABLE "users" (
     "avatarUrl" TEXT,
     "isVerified" BOOLEAN NOT NULL DEFAULT false,
     "status" "UserStatus" NOT NULL DEFAULT 'ACTIVE',
+    "accountType" "AccountType" NOT NULL DEFAULT 'PENDING',
+    "hasCompletedOnboarding" BOOLEAN NOT NULL DEFAULT false,
     "createdAt" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "createdBy" UUID,
     "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,

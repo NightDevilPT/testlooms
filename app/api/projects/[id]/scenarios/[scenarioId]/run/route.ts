@@ -34,8 +34,21 @@ export const POST = rateLimitMiddleware(
           return ResponseService.badRequest("Missing project or scenario ID", request);
         }
 
+        let environmentId: string | undefined;
         try {
-          const result = await ScenariosService.executeScenario(projectId, scenarioId, userId);
+          const body = await request.clone().json().catch(() => ({}));
+          environmentId = body?.environmentId;
+        } catch {
+          // Fall back to query param
+        }
+
+        if (!environmentId) {
+          const url = new URL(request.url);
+          environmentId = url.searchParams.get("environmentId") || undefined;
+        }
+
+        try {
+          const result = await ScenariosService.executeScenario(projectId, scenarioId, userId, environmentId);
           return ResponseService.ok(result, HttpStatus.OK, request);
         } catch (err: unknown) {
           const errorMessage = err instanceof Error ? err.message : "Failed to run scenario";

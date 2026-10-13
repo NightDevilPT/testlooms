@@ -10,6 +10,9 @@ import authMiddleware from "@/middleware/auth/auth.middleware";
 import rateLimitMiddleware from "@/middleware/rate-limit/rate-limit.middleware";
 import rbacMiddleware from "@/middleware/rbac/rbac.middleware";
 import { RouteHandlerContext } from "@/middleware/types";
+import { prisma } from "@/lib/db/prisma";
+import { decryptVariables } from "@/lib/projects-service/crypto";
+import { resolveDynamicValue } from "@/lib/utils/pattern-generator";
 
 interface Params {
   id: string;
@@ -317,6 +320,43 @@ export const POST = rateLimitMiddleware(
         if (action === "replay") {
           let customLogs: ActionLog[] | undefined = body.customLogs;
 
+          // Resolve environment profile if specified or default
+          let envProfile = null;
+          if (body.environmentId) {
+            envProfile = await prisma.environmentProfile.findFirst({
+              where: { id: body.environmentId, projectId, deletedAt: null },
+            });
+          } else {
+            envProfile = await prisma.environmentProfile.findFirst({
+              where: { projectId, isDefault: true, deletedAt: null },
+            });
+            if (!envProfile) {
+              envProfile = await prisma.environmentProfile.findFirst({
+                where: { projectId, deletedAt: null },
+                orderBy: { createdAt: "asc" },
+              });
+            }
+          }
+
+          const envVariables: Record<string, string> = {};
+          let targetBaseUrl = project.baseUrl;
+
+          if (envProfile) {
+            try {
+              const decryptedEntries = decryptVariables(envProfile.variables);
+              for (const entry of decryptedEntries) {
+                envVariables[entry.key] = entry.value;
+              }
+              if (envVariables["BASE_URL"]) {
+                targetBaseUrl = envVariables["BASE_URL"];
+              } else if (envVariables["baseUrl"]) {
+                targetBaseUrl = envVariables["baseUrl"];
+              }
+            } catch {
+              // Decryption fallback
+            }
+          }
+
           if (!customLogs && Array.isArray(body.steps) && body.steps.length > 0) {
             customLogs = body.steps.map((step: RecordedStep, idx: number) => {
               let type: ActionLog["type"] = "click";
@@ -354,6 +394,11 @@ export const POST = rateLimitMiddleware(
                   break;
               }
 
+              const rawValue = step.inputConfig?.value || step.inputConfig?.url;
+              const resolvedValue = resolveDynamicValue(rawValue, envVariables);
+              const resolvedUrl = resolveDynamicValue(step.inputConfig?.url, envVariables);
+              const resolvedExpectedValue = resolveDynamicValue(step.assertionConfig?.expectedValue, envVariables);
+
               return {
                 id: step.id || `step-${idx + 1}`,
                 type,
@@ -362,11 +407,11 @@ export const POST = rateLimitMiddleware(
                 xpath: step.selectorMetadata?.xpathSelector,
                 elementId: step.selectorMetadata?.id,
                 innerText: step.selectorMetadata?.text,
-                value: step.inputConfig?.value || step.inputConfig?.url,
-                url: step.inputConfig?.url,
+                value: resolvedValue,
+                url: resolvedUrl,
                 key: step.inputConfig?.keyName,
                 filePaths: step.inputConfig?.filePaths,
-                expectedValue: step.assertionConfig?.expectedValue,
+                expectedValue: resolvedExpectedValue,
                 timestamp: new Date().toLocaleTimeString(),
               };
             });
@@ -374,7 +419,7 @@ export const POST = rateLimitMiddleware(
 
           const session = await PlaywrightService.replaySession(
             sessionId,
-            project.baseUrl,
+            targetBaseUrl,
             customLogs
           );
           const steps = mapActionLogsToSteps(session.actionLogs);
@@ -397,6 +442,43 @@ export const POST = rateLimitMiddleware(
         if (action === "record_from_step") {
           const targetIndex = typeof body.targetIndex === "number" ? body.targetIndex : 0;
           let customLogs: ActionLog[] | undefined = undefined;
+
+          // Resolve environment profile for fast-forward replay
+          let envProfile = null;
+          if (body.environmentId) {
+            envProfile = await prisma.environmentProfile.findFirst({
+              where: { id: body.environmentId, projectId, deletedAt: null },
+            });
+          } else {
+            envProfile = await prisma.environmentProfile.findFirst({
+              where: { projectId, isDefault: true, deletedAt: null },
+            });
+            if (!envProfile) {
+              envProfile = await prisma.environmentProfile.findFirst({
+                where: { projectId, deletedAt: null },
+                orderBy: { createdAt: "asc" },
+              });
+            }
+          }
+
+          const envVariables: Record<string, string> = {};
+          let targetBaseUrl = project.baseUrl;
+
+          if (envProfile) {
+            try {
+              const decryptedEntries = decryptVariables(envProfile.variables);
+              for (const entry of decryptedEntries) {
+                envVariables[entry.key] = entry.value;
+              }
+              if (envVariables["BASE_URL"]) {
+                targetBaseUrl = envVariables["BASE_URL"];
+              } else if (envVariables["baseUrl"]) {
+                targetBaseUrl = envVariables["baseUrl"];
+              }
+            } catch {
+              // Decryption fallback
+            }
+          }
 
           if (Array.isArray(body.steps) && body.steps.length > 0) {
             const sliced = body.steps.slice(0, targetIndex + 1);
@@ -436,6 +518,11 @@ export const POST = rateLimitMiddleware(
                   break;
               }
 
+              const rawValue = step.inputConfig?.value || step.inputConfig?.url;
+              const resolvedValue = resolveDynamicValue(rawValue, envVariables);
+              const resolvedUrl = resolveDynamicValue(step.inputConfig?.url, envVariables);
+              const resolvedExpectedValue = resolveDynamicValue(step.assertionConfig?.expectedValue, envVariables);
+
               return {
                 id: step.id || `step-${idx + 1}`,
                 type,
@@ -444,11 +531,11 @@ export const POST = rateLimitMiddleware(
                 xpath: step.selectorMetadata?.xpathSelector,
                 elementId: step.selectorMetadata?.id,
                 innerText: step.selectorMetadata?.text,
-                value: step.inputConfig?.value || step.inputConfig?.url,
-                url: step.inputConfig?.url,
+                value: resolvedValue,
+                url: resolvedUrl,
                 key: step.inputConfig?.keyName,
                 filePaths: step.inputConfig?.filePaths,
-                expectedValue: step.assertionConfig?.expectedValue,
+                expectedValue: resolvedExpectedValue,
                 timestamp: new Date().toLocaleTimeString(),
               };
             });
@@ -456,7 +543,7 @@ export const POST = rateLimitMiddleware(
 
           const session = await PlaywrightService.recordFromStep(
             sessionId,
-            project.baseUrl,
+            targetBaseUrl,
             customLogs
           );
           const steps = mapActionLogsToSteps(session.actionLogs);

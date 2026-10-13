@@ -11,6 +11,8 @@ import {
   UpdateScenarioPayload,
 } from "./types";
 import { TestStepInput, UpdateStepInput } from "./validation";
+import { decryptVariables } from "@/lib/projects-service/crypto";
+import { resolveDynamicValue } from "@/lib/utils/pattern-generator";
 
 type PrismaScenarioResult = Prisma.TestScenarioGetPayload<{
   include: {
@@ -771,11 +773,55 @@ export class ScenariosService {
   static async executeScenario(
     projectId: string,
     scenarioId: string,
-    userId?: string
+    userId?: string,
+    environmentId?: string
   ): Promise<{ execution: any; scenario: TestScenarioWithSteps }> {
     const scenario = await this.getScenarioById(scenarioId, projectId);
     if (!scenario) {
       throw new Error("Scenario not found");
+    }
+
+    // Resolve environment profile if specified or default
+    let envProfile = null;
+    if (environmentId) {
+      envProfile = await prisma.environmentProfile.findFirst({
+        where: { id: environmentId, projectId, deletedAt: null },
+      });
+    } else {
+      envProfile = await prisma.environmentProfile.findFirst({
+        where: { projectId, isDefault: true, deletedAt: null },
+      });
+      if (!envProfile) {
+        envProfile = await prisma.environmentProfile.findFirst({
+          where: { projectId, deletedAt: null },
+          orderBy: { createdAt: "asc" },
+        });
+      }
+    }
+
+    // Decrypt and load environment variables
+    const envVariables: Record<string, string> = {};
+    let targetBaseUrl = scenario.project?.baseUrl || "";
+
+    if (envProfile) {
+      try {
+        const decryptedEntries = decryptVariables(envProfile.variables);
+        for (const entry of decryptedEntries) {
+          envVariables[entry.key] = entry.value;
+        }
+
+        // Support BASE_URL or baseUrl override from environment profile
+        if (envVariables["BASE_URL"]) {
+          targetBaseUrl = envVariables["BASE_URL"];
+        } else if (envVariables["baseUrl"]) {
+          targetBaseUrl = envVariables["baseUrl"];
+        }
+      } catch (e) {
+        logger.warn(
+          `Failed to decrypt variables for environment [${envProfile.id}]`,
+          "ScenariosService"
+        );
+      }
     }
 
     const startTime = Date.now();
@@ -786,6 +832,7 @@ export class ScenariosService {
       data: {
         projectId,
         scenarioId,
+        environmentProfileId: envProfile?.id || null,
         status: "RUNNING",
         triggerType: "MANUAL",
         startedAt,
@@ -812,7 +859,7 @@ export class ScenariosService {
       }
       allScenarioSteps = [...allScenarioSteps, ...scenario.steps];
 
-      // Convert scenario steps to ActionLogs for Playwright replay in strict ascending order (#1..#N)
+      // Convert scenario steps to ActionLogs with dynamic pattern and environment variable resolution
       const customLogs = allScenarioSteps.map((step, idx) => {
         let type: any = "click";
         switch (step.actionType) {
@@ -849,6 +896,11 @@ export class ScenariosService {
             break;
         }
 
+        const rawValue = step.inputConfig?.value || step.inputConfig?.url;
+        const resolvedValue = resolveDynamicValue(rawValue, envVariables);
+        const resolvedUrl = resolveDynamicValue(step.inputConfig?.url, envVariables);
+        const resolvedExpectedValue = resolveDynamicValue(step.assertionConfig?.expectedValue, envVariables);
+
         return {
           id: step.id || `step-${idx + 1}`,
           type,
@@ -859,11 +911,11 @@ export class ScenariosService {
           innerText: step.selectorMetadata?.text,
           selectorMetadata: step.selectorMetadata,
           defaultSelector: step.selectorMetadata?.defaultSelector,
-          value: step.inputConfig?.value || step.inputConfig?.url,
-          url: step.inputConfig?.url,
+          value: resolvedValue,
+          url: resolvedUrl,
           key: step.inputConfig?.keyName,
           filePaths: step.inputConfig?.filePaths,
-          expectedValue: step.assertionConfig?.expectedValue,
+          expectedValue: resolvedExpectedValue,
           timestamp: new Date().toLocaleTimeString(),
         };
       }) as unknown as ActionLog[];
@@ -871,7 +923,7 @@ export class ScenariosService {
       // 2. Trigger Playwright replay execution in ascending order
       if (customLogs.length > 0) {
         const sessionId = `exec-${scenario.id}-${Date.now()}`;
-        await PlaywrightService.replaySession(sessionId, scenario.project?.baseUrl, customLogs);
+        await PlaywrightService.replaySession(sessionId, targetBaseUrl, customLogs);
       }
 
       // Evaluate results for each step
@@ -940,7 +992,8 @@ export class ScenariosService {
    */
   static async executeAllScenarios(
     projectId: string,
-    userId?: string
+    userId?: string,
+    environmentId?: string
   ): Promise<{ totalExecuted: number; executions: any[] }> {
     const { scenarios } = await this.listScenarios({ projectId, pageSize: 100 });
     if (scenarios.length === 0) {
@@ -956,7 +1009,7 @@ export class ScenariosService {
 
     const executions: any[] = [];
     for (const sc of sortedScenarios) {
-      const res = await this.executeScenario(projectId, sc.id, userId);
+      const res = await this.executeScenario(projectId, sc.id, userId, environmentId);
       executions.push(res.execution);
     }
 
