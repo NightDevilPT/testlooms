@@ -6,8 +6,8 @@ import { generateIdempotencyKey } from "@/lib/idempotency-service/types";
 import {
 	EnvironmentProfileItem,
 	EnvironmentVariableEntry,
-	ENVIRONMENT_ENTRY_TYPE_OPTIONS,
 } from "@/lib/projects-service/types";
+import { ENVIRONMENT_ENTRY_TYPE_OPTIONS } from "./add-variable-dialog";
 import { FailureEnvelope } from "@/lib/response-service/types";
 import { FormDialog } from "@/components/shared/form-dialog";
 import { Input } from "@/components/ui/input";

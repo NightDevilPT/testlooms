@@ -41,6 +41,9 @@ import {
 	AlertTriangle,
 } from "lucide-react";
 import { useScenarios } from "@/components/context/scenarios-context";
+import { useExecutions } from "@/components/context/executions-context";
+import { RunProgress } from "@/components/shared/run-progress";
+import type { ExecutionRunSnapshot } from "@/lib/scenarios-service/types";
 import { generateIdempotencyKey } from "@/lib/idempotency-service/types";
 import { toast } from "@/components/ui/toast";
 import { Input } from "@/components/ui/input";
@@ -500,39 +503,46 @@ export function WorkspacePage({ projectId }: WorkspacePageProps) {
 		return selected ? plainOnly(selected.variables) : [];
 	}, [selectedEnvId, envProfiles]);
 
-	// Replay Recorded Steps in Chromium Browser
+	// Replay the steps in the timeline as a live run: progress shows in the run progress sheet
+	const { startDraftRun } = useExecutions();
+	const [runExecutionId, setRunExecutionId] = React.useState<string | null>(
+		null,
+	);
+	const [isRunSheetOpen, setIsRunSheetOpen] = React.useState(false);
+
+	// Fires when the run ends, even if the sheet is closed, so the Replay button re-enables
+	const handleRunComplete = (snapshot: ExecutionRunSnapshot) => {
+		setIsReplaying(false);
+		setReplayMessage(
+			snapshot.status === "PASSED"
+				? "Replay finished cleanly!"
+				: snapshot.status === "CANCELLED"
+					? "Replay cancelled."
+					: "Replay failed.",
+		);
+		setTimeout(() => setReplayMessage(null), 4000);
+	};
+
 	const handleReplayScenario = async () => {
 		if (steps.length === 0 || isReplaying) return;
-		try {
-			setIsReplaying(true);
-			setReplayMessage("Replaying test steps in Chromium...");
-			const res = await apiClient.post<RecorderResponse>(
-				`/api/projects/${projectId}/recorder`,
-				{
-					action: "replay",
-					sessionId,
-					steps,
-					environmentId:
-						selectedEnvId !== "default"
-							? selectedEnvId
-							: envProfiles.find((e) => e.isDefault)?.id ||
-								envProfiles[0]?.id ||
-								undefined,
-				},
-			);
-
-			if (res.data && !Array.isArray(res.data)) {
-				const data = res.data as RecorderResponse;
-				if (data.currentUrl) setCurrentUrl(data.currentUrl);
-				if (data.pageTitle) setPageTitle(data.pageTitle);
-			}
-			setReplayMessage("Replay finished cleanly!");
-			setTimeout(() => setReplayMessage(null), 4000);
-		} catch {
-			setReplayMessage("Replay failed.");
-			setTimeout(() => setReplayMessage(null), 4000);
-		} finally {
+		setIsReplaying(true);
+		setReplayMessage("Replaying test steps in Chromium...");
+		const res = await startDraftRun(projectId, steps, {
+			title: loadedScenario?.title,
+			environmentId:
+				selectedEnvId !== "default"
+					? selectedEnvId
+					: envProfiles.find((e) => e.isDefault)?.id ||
+						envProfiles[0]?.id ||
+						undefined,
+		});
+		if (res.success && res.executionId) {
+			setRunExecutionId(res.executionId);
+			setIsRunSheetOpen(true);
+		} else {
 			setIsReplaying(false);
+			setReplayMessage(res.error || "Replay failed.");
+			setTimeout(() => setReplayMessage(null), 4000);
 		}
 	};
 
@@ -1444,6 +1454,14 @@ export function WorkspacePage({ projectId }: WorkspacePageProps) {
 					</div>
 				</div>
 			</main>
+
+			<RunProgress
+				executionId={runExecutionId}
+				open={isRunSheetOpen}
+				onOpenChange={setIsRunSheetOpen}
+				onComplete={handleRunComplete}
+				onRerun={handleReplayScenario}
+			/>
 
 			<SaveScenarioDialog
 				open={saveDialogOpen}

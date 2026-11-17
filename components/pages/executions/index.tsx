@@ -6,6 +6,7 @@ import { useProjects } from "@/components/context/projects-context";
 import { ExecutionCardRow } from "./_components/execution-card-row";
 import { ExecutionsSkeleton } from "./_components/executions-skeleton";
 import { ExecutionDetailDialog } from "./_components/execution-detail-dialog";
+import { RunProgress } from "@/components/shared/run-progress";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -42,6 +43,7 @@ export function ExecutionsContent() {
   const [projectIdFilter, setProjectIdFilter] = React.useState<string>("ALL");
   const [triggerFilter, setTriggerFilter] = React.useState<string>("ALL");
   const [inspectingExecution, setInspectingExecution] = React.useState<TestExecutionItem | null>(null);
+  const [liveExecutionId, setLiveExecutionId] = React.useState<string | null>(null);
 
   // 350ms search debounce
   React.useEffect(() => {
@@ -291,7 +293,7 @@ export function ExecutionsContent() {
               <ExecutionCardRow
                 key={execution.id}
                 execution={execution}
-                onInspect={(e) => setInspectingExecution(e)}
+                onInspect={(e) => (e.status === "RUNNING" ? setLiveExecutionId(e.id) : setInspectingExecution(e))}
               />
             ))}
           </div>
@@ -327,6 +329,13 @@ export function ExecutionsContent() {
           )}
         </div>
       )}
+
+      {/* Live progress for runs that are still executing */}
+      <RunProgress
+        executionId={liveExecutionId}
+        open={!!liveExecutionId}
+        onOpenChange={(open) => !open && setLiveExecutionId(null)}
+      />
 
       {/* Execution Step Results Inspection Modal */}
       <ExecutionDetailDialog

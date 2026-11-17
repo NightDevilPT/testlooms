@@ -7,7 +7,6 @@ import {
 	EnvironmentProfileItem,
 	EnvironmentVariableEntry,
 	EnvironmentEntryType,
-	ENVIRONMENT_ENTRY_TYPE_OPTIONS,
 } from "@/lib/projects-service/types";
 import { FailureEnvelope } from "@/lib/response-service/types";
 import { FormDialog } from "@/components/shared/form-dialog";
@@ -23,6 +22,44 @@ import {
 } from "@/components/ui/select";
 import { toast } from "@/components/ui/toast";
 import { Plus, AlertTriangle, Eye, EyeOff, Lock } from "lucide-react";
+
+/** Entry types selectable in the environment UI, with labels and key hints. */
+export const ENVIRONMENT_ENTRY_TYPE_OPTIONS: {
+  value: EnvironmentEntryType;
+  label: string;
+  keyPlaceholder: string;
+  valuePlaceholder: string;
+  hint: string;
+}[] = [
+  {
+    value: "variable",
+    label: "Variable",
+    keyPlaceholder: "e.g. TEST_USER_EMAIL",
+    valuePlaceholder: "e.g. qa@example.com",
+    hint: "Use in steps as {{env.KEY}}.",
+  },
+  {
+    value: "header",
+    label: "HTTP Header",
+    keyPlaceholder: "e.g. Authorization",
+    valuePlaceholder: "e.g. Bearer eyJhbGciOi...",
+    hint: "Sent with every request to your project site (and its subdomains) only, never to third-party sites.",
+  },
+  {
+    value: "cookie",
+    label: "Cookie",
+    keyPlaceholder: "e.g. access_token",
+    valuePlaceholder: "e.g. session cookie value",
+    hint: "Set as a cookie for your project site before the first step, so the browser starts logged in.",
+  },
+  {
+    value: "localStorage",
+    label: "Local Storage",
+    keyPlaceholder: "e.g. token",
+    valuePlaceholder: "e.g. eyJhbGciOi...",
+    hint: "Written to your site localStorage before any page script runs. Key is case-sensitive.",
+  },
+];
 
 interface AddVariableDialogProps {
 	projectId: string;

@@ -20,6 +20,9 @@ import { DeleteVariableDialog } from "./_components/delete-variable-dialog";
 import { ScenarioCard } from "./_components/scenario-card";
 import { DeleteScenarioDialog } from "./_components/delete-scenario-dialog";
 import { FailureEnvelope } from "@/lib/response-service/types";
+import { useExecutions } from "@/components/context/executions-context";
+import { RunProgress } from "@/components/shared/run-progress";
+import type { ExecutionRunSnapshot } from "@/lib/scenarios-service/types";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -198,86 +201,101 @@ export function ProjectDetailsPageComponent() {
 		}
 	}, [projectId]);
 
+	const { startScenarioRun } = useExecutions();
+	const [liveExecutionId, setLiveExecutionId] = React.useState<string | null>(null);
+	const [isRunDrawerOpen, setIsRunDrawerOpen] = React.useState(false);
+	const [queueInfo, setQueueInfo] = React.useState<{ index: number; total: number } | null>(null);
+	// Remaining scenarios for "Run All"; scenarios run one after another because they can depend on each other
+	const queueRef = React.useRef<{ ids: string[]; total: number; passed: number; failed: number } | null>(null);
+
+	const finishQueue = () => {
+		const queue = queueRef.current;
+		queueRef.current = null;
+		setQueueInfo(null);
+		setIsRunningAllScenarios(false);
+		setRunningScenarioId(null);
+		if (queue) {
+			toast.add({
+				title: "All scenarios finished",
+				description: `${queue.passed} passed, ${queue.failed} failed out of ${queue.total}.`,
+				type: queue.failed > 0 ? "error" : "success",
+			});
+		}
+		fetchExecutions();
+		fetchProjectDetails();
+	};
+
+	const startNextInQueue = async () => {
+		const queue = queueRef.current;
+		if (!queue) return;
+		while (queue.ids.length > 0) {
+			const scenarioId = queue.ids.shift() as string;
+			setRunningScenarioId(scenarioId);
+			const res = await startScenarioRun(projectId, scenarioId);
+			if (res.success && res.executionId) {
+				setQueueInfo({ index: queue.total - queue.ids.length, total: queue.total });
+				setLiveExecutionId(res.executionId);
+				setIsRunDrawerOpen(true);
+				return;
+			}
+			queue.failed += 1;
+			toast.add({
+				title: "Could not start scenario",
+				description: res.error || "The scenario could not be started.",
+				type: "error",
+			});
+		}
+		finishQueue();
+	};
+
+	// Fires when a run finishes, even while the drawer is hidden, so the queue keeps moving
+	const handleRunComplete = (snapshot: ExecutionRunSnapshot) => {
+		const queue = queueRef.current;
+		if (!queue) {
+			setRunningScenarioId(null);
+			toast.add({
+				title: `Scenario ${snapshot.status.toLowerCase()}`,
+				description: snapshot.errorMessage || `"${snapshot.scenarioTitle}" finished.`,
+				type: snapshot.status === "PASSED" ? "success" : "error",
+			});
+			fetchExecutions();
+			fetchProjectDetails();
+			return;
+		}
+		if (snapshot.status === "PASSED") queue.passed += 1;
+		else queue.failed += 1;
+		// Cancelling one run stops the rest of the queue
+		if (snapshot.status === "CANCELLED") queue.ids = [];
+		setTimeout(() => void startNextInQueue(), 1200);
+	};
+
 	const handleRunScenario = async (sc: TestScenarioWithSteps) => {
 		if (runningScenarioId || isRunningAllScenarios) return;
 		setRunningScenarioId(sc.id);
-		try {
-			toast.add({
-				title: "Running Scenario...",
-				description: `Executing "${sc.title}" live.`,
-			});
-			const res = await apiClient.post<any>(
-				`/api/projects/${projectId}/scenarios/${sc.id}/run`,
-				{},
-			);
-			if (res.success && res.data) {
-				const execStatus = res.data.execution?.status || "PASSED";
-				toast.add({
-					title: `Scenario Execution ${execStatus}`,
-					description: `Finished executing "${sc.title}". Telemetry saved to DB.`,
-				});
-				fetchExecutions();
-				fetchProjectDetails();
-			} else {
-				const failure = res as FailureEnvelope;
-				toast.add({
-					title: "Execution Failed",
-					description:
-						failure.error?.message || "Failed to execute scenario.",
-				});
-			}
-		} catch {
-			toast.add({
-				title: "Execution Error",
-				description:
-					"An unexpected error occurred while running the scenario.",
-			});
-		} finally {
+		const res = await startScenarioRun(projectId, sc.id);
+		if (res.success && res.executionId) {
+			setLiveExecutionId(res.executionId);
+			setIsRunDrawerOpen(true);
+		} else {
 			setRunningScenarioId(null);
+			toast.add({
+				title: "Could not start run",
+				description: res.error || "Failed to execute scenario.",
+				type: "error",
+			});
 		}
 	};
 
 	const handleRunAllScenarios = async () => {
-		if (
-			runningScenarioId ||
-			isRunningAllScenarios ||
-			scenarios.length === 0
-		)
-			return;
+		if (runningScenarioId || isRunningAllScenarios || scenarios.length === 0) return;
 		setIsRunningAllScenarios(true);
-		try {
-			toast.add({
-				title: "Running All Scenarios...",
-				description: `Executing ${scenarios.length} scenarios sequentially in order.`,
-			});
-			const res = await apiClient.post<any>(
-				`/api/projects/${projectId}/executions`,
-				{},
-			);
-			if (res.success && res.data) {
-				toast.add({
-					title: "All Scenarios Executed Successfully",
-					description: `Completed ${res.data.totalExecuted || scenarios.length} scenario execution runs.`,
-				});
-				fetchExecutions();
-				fetchProjectDetails();
-			} else {
-				const failure = res as FailureEnvelope;
-				toast.add({
-					title: "Execution Error",
-					description:
-						failure.error?.message ||
-						"Failed to execute all scenarios.",
-				});
-			}
-		} catch {
-			toast.add({
-				title: "Execution Error",
-				description: "An error occurred while executing all scenarios.",
-			});
-		} finally {
-			setIsRunningAllScenarios(false);
-		}
+		queueRef.current = {
+			ids: scenarios.map((sc) => sc.id),
+			total: scenarios.length,
+			passed: 0,
+			failed: 0,
+		};
+		void startNextInQueue();
 	};
 
 	React.useEffect(() => {
@@ -453,6 +471,15 @@ export function ProjectDetailsPageComponent() {
 
 					{/* Primary Actions (Run All Scenarios & Record New Scenario CTA) */}
 					<div className="flex items-center gap-3 shrink-0">
+						{runningScenarioId && liveExecutionId && !isRunDrawerOpen && (
+							<Button
+								variant="secondary"
+								onClick={() => setIsRunDrawerOpen(true)}
+								className="gap-2 font-semibold cursor-pointer"
+							>
+								<Loader2 className="h-4 w-4 animate-spin" /> View live run
+							</Button>
+						)}
 						{scenarios.length > 0 && (
 							<Button
 								variant="outline"
@@ -1273,6 +1300,15 @@ export function ProjectDetailsPageComponent() {
 					fetchScenarios();
 					fetchProjectDetails();
 				}}
+			/>
+
+			{/* Live progress for single runs and the "Run All" queue */}
+			<RunProgress
+				executionId={liveExecutionId}
+				open={isRunDrawerOpen}
+				onOpenChange={setIsRunDrawerOpen}
+				onComplete={handleRunComplete}
+				queueLabel={queueInfo ? `Scenario ${queueInfo.index} of ${queueInfo.total}` : undefined}
 			/>
 
 			{/* Add, Edit, Delete Variable Dialogs */}

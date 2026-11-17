@@ -7,6 +7,8 @@ import {
 	RecordedStep,
 } from "@/lib/scenarios-service/types";
 import { ProjectsService } from "@/lib/projects-service/projects.service";
+import { ScenariosService } from "@/lib/scenarios-service/scenarios.service";
+import { draftRunSchema } from "@/lib/scenarios-service/validation";
 import ResponseService from "@/lib/response-service/response.service";
 import { HttpStatus } from "@/lib/response-service/types";
 import { RbacPermission } from "@/lib/rbac-service/types";
@@ -411,126 +413,37 @@ export const POST = rateLimitMiddleware(
 				}
 
 				if (action === "replay") {
-					let customLogs: ActionLog[] | undefined = body.customLogs;
-
-					// Resolve environment profile: {{env.KEY}} variables + header/cookie/localStorage session auth
-					const { envVariables, sessionAuth, targetBaseUrl } =
-						await ProjectsService.resolveEnvironmentContext(
-							projectId,
-							project.baseUrl,
-							body.environmentId,
-						);
-
-					if (
-						!customLogs &&
-						Array.isArray(body.steps) &&
-						body.steps.length > 0
-					) {
-						customLogs = body.steps.map(
-							(step: RecordedStep, idx: number) => {
-								let type: ActionLog["type"] = "click";
-								switch (step.actionType) {
-									case "CLICK":
-										type = step.inputConfig?.url
-											? "navigate"
-											: "click";
-										break;
-									case "TYPE":
-										type = "type";
-										break;
-									case "SELECT":
-										type = "select_option";
-										break;
-									case "CHECK":
-									case "UNCHECK":
-										type = "check";
-										break;
-									case "HOVER":
-										type = "hover";
-										break;
-									case "SCROLL":
-										type = "scroll";
-										break;
-									case "KEYPRESS":
-										type = "press_key";
-										break;
-									case "UPLOAD_FILE":
-										type = "upload_file";
-										break;
-									case "ASSERT":
-										type =
-											step.assertionConfig
-												?.assertionType ===
-											"ASSERT_TEXT"
-												? "assert_text"
-												: "assert_visible";
-										break;
-									default:
-										type = "click";
-										break;
-								}
-
-								const rawValue =
-									step.inputConfig?.value ||
-									step.inputConfig?.url;
-								const resolvedValue = resolveDynamicValue(
-									rawValue,
-									envVariables,
-								);
-								const resolvedUrl = resolveDynamicValue(
-									step.inputConfig?.url,
-									envVariables,
-								);
-								const resolvedExpectedValue =
-									resolveDynamicValue(
-										step.assertionConfig?.expectedValue,
-										envVariables,
-									);
-
-								return {
-									id: step.id || `step-${idx + 1}`,
-									type,
-									description:
-										step.description || `Step ${idx + 1}`,
-									selector:
-										step.selectorMetadata?.cssSelector ||
-										step.primaryKey,
-									xpath: step.selectorMetadata?.xpathSelector,
-									elementId: step.selectorMetadata?.id,
-									innerText: step.selectorMetadata?.text,
-									value: resolvedValue,
-									url: resolvedUrl,
-									key: step.inputConfig?.keyName,
-									filePaths: step.inputConfig?.filePaths,
-									expectedValue: resolvedExpectedValue,
-									timestamp: new Date().toLocaleTimeString(),
-								};
-							},
+					// Runs the steps in the editor (saved or not) as a live, in-memory preview run.
+					// Progress: GET /api/executions/:id/stream
+					const parsed = draftRunSchema.safeParse({
+						steps: body.steps,
+						environmentId: body.environmentId,
+						title: body.title,
+					});
+					if (!parsed.success) {
+						return ResponseService.badRequest(
+							parsed.error.issues[0]?.message || "Invalid run request",
+							request,
 						);
 					}
 
-					const session = await PlaywrightService.replaySession(
-						sessionId,
-						targetBaseUrl,
-						customLogs,
-						sessionAuth,
-					);
-					const steps = mapActionLogsToSteps(session.actionLogs);
-
-					return ResponseService.ok(
-						{
-							sessionId,
-							isRecording: false,
-							isClosed:
-								session.isClosed || session.page.isClosed(),
-							currentUrl: session.currentUrl,
-							pageTitle: session.pageTitle,
-							cachedFrame: session.cachedFrame,
-							steps: steps.length > 0 ? steps : body.steps || [],
-						},
-						HttpStatus.OK,
-						request,
-					);
+					try {
+						const snapshot = await ScenariosService.startDraftRun(
+							projectId,
+							parsed.data.steps as RecordedStep[],
+							userId,
+							{
+								environmentId: parsed.data.environmentId,
+								title: parsed.data.title,
+							},
+						);
+						return ResponseService.ok(snapshot, HttpStatus.OK, request);
+					} catch (err: unknown) {
+						return ResponseService.badRequest(
+							err instanceof Error ? err.message : "Failed to start the run",
+							request,
+						);
+					}
 				}
 
 				if (action === "record_from_step") {

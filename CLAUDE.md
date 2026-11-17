@@ -469,6 +469,7 @@ Every file in `components/shared/` must appear here:
 | `playwright-studio/studio-action-timeline.tsx`   | `StudioActionTimeline` | Internal to PlaywrightStudio    | Live recorded step inspector timeline                   |
 | `playwright-studio/studio-code-exporter.tsx`     | `StudioCodeExporter`   | Internal to PlaywrightStudio    | Multi-framework automated test code exporter modal      |
 | `onboarding-modal.tsx`                            | `OnboardingModal`      | Global (`RootProviders`)        | Non-dismissible account type & workspace setup modal    |
+| `run-progress.tsx`                                | `RunProgress`          | Scenarios, Project Details, Executions, Studio (workspace) | Right-hand sheet with live scenario run progress: progress bar, streamed browser view, counters, delivery-style step tracker, cancel and re-run |
 
 _(Add a row every time a new shared component is created. Remove the row if the component is deleted.)_
 
@@ -518,6 +519,7 @@ This expands on §2.1 — every folder under `lib/` must appear here, including 
 | `lib/auth-service/`      | `types.ts`, `validation.ts`, `auth.service.ts`       | `/api/auth/*`                       | Auth Forms / Client Pages |
 | `lib/projects-service/`   | `types.ts`, `validation.ts`, `projects.service.ts` | `/api/projects`, `/api/projects/[id]`, `/api/projects/ping`, `/api/projects/[id]/env-profiles` | `ProjectsContext`, `projects/index.tsx`, `project-details/index.tsx` |
 | `lib/playwright-service/` | `types.ts`, `playwright.service.ts` | _(to be added as routes are built)_ | Studio workspace, execution runner |
+| `lib/scenarios-service/` | `types.ts`, `validation.ts`, `scenarios.service.ts` | `/api/scenarios`, `/api/projects/[id]/scenarios/**` (CRUD, steps, `run`), `/api/projects/[id]/recorder` (`replay`), `/api/executions/[id]/stream`, `/api/executions/[id]/cancel` | `ScenariosContext`, `ExecutionsContext` (`startScenarioRun`, `startDraftRun`, `cancelExecution`), `RunProgress` |
 
 _(Add a row every time a new `lib/<service-name>/` folder is created. Keep the "Consumed By" columns current as routes/components start calling the service — stale entries should be removed during review.)_
 

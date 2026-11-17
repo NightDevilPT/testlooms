@@ -81,5 +81,38 @@ export interface PlaywrightSession {
   listeners?: Set<(data: any) => void>;
 }
 
-export type SupportedFramework = 'playwright' | 'cypress' | 'selenium' | 'cucumber';
+/** Filled in by executeStepWithSelfHealing so callers can tell which locator strategy worked. */
+export interface StepExecutionOutcome {
+  /** 0 = the preferred (default) locator, > 0 = a fallback locator healed the step */
+  candidateIndex: number;
+  selector?: string;
+  strategy?: string;
+}
+
+export interface ScenarioRunStepResult {
+  status: 'PASSED' | 'FAILED' | 'HEALED';
+  durationMs: number;
+  error?: string;
+  healedSelector?: string;
+  healedPriority?: string;
+  /** JPEG data URL of the page at the moment a step failed */
+  screenshot?: string | null;
+}
+
+/** Callbacks used by PlaywrightService.runScenarioSteps to report live progress. */
+export interface ScenarioRunHooks {
+  isCancelled: () => boolean;
+  onStepStart: (index: number, step: ActionLog) => void;
+  onStepResult: (index: number, result: ScenarioRunStepResult) => void;
+  onFrame?: (frame: string) => void;
+  onPage?: (currentUrl: string, pageTitle: string) => void;
+}
+
+export interface ScenarioRunOutcome {
+  cancelled: boolean;
+  /** Index of the first failed step, or null when every step passed */
+  failedIndex: number | null;
+}
+
+export type SupportedFramework ='playwright' | 'cypress' | 'selenium' | 'cucumber';
 export type SupportedLanguage = 'typescript' | 'javascript' | 'python' | 'java' | 'csharp';

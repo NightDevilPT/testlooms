@@ -3,6 +3,7 @@
 import * as React from "react";
 import apiClient from "@/lib/api-client/api-client.service";
 import { FailureEnvelope } from "@/lib/response-service/types";
+import type { RecordedStep } from "@/lib/scenarios-service/types";
 
 export interface ExecutionStepResultItem {
   id: string;
@@ -88,6 +89,20 @@ interface ExecutionsContextType {
     pageSize?: number;
   }) => Promise<TestExecutionItem[]>;
   fetchExecutionById: (id: string) => Promise<TestExecutionItem | null>;
+  /** Starts a scenario run in the background and returns its execution id for live progress tracking */
+  startScenarioRun: (
+    projectId: string,
+    scenarioId: string,
+    environmentId?: string
+  ) => Promise<{ success: boolean; executionId?: string; error?: string }>;
+  /** Runs steps from the Studio editor (saved or not) as a live preview; nothing is stored */
+  startDraftRun: (
+    projectId: string,
+    steps: RecordedStep[],
+    options?: { environmentId?: string; title?: string }
+  ) => Promise<{ success: boolean; executionId?: string; error?: string }>;
+  /** Requests cancellation of a running execution; it stops before its next step */
+  cancelExecution: (id: string) => Promise<{ success: boolean; error?: string }>;
 }
 
 const ExecutionsContext = React.createContext<ExecutionsContextType | undefined>(undefined);
@@ -163,6 +178,54 @@ export function ExecutionsProvider({ children }: { children: React.ReactNode }) 
     }
   }, []);
 
+  const startScenarioRun = React.useCallback(async (projectId: string, scenarioId: string, environmentId?: string) => {
+    try {
+      const response = await apiClient.post<{ executionId: string }>(
+        `/api/projects/${projectId}/scenarios/${scenarioId}/run`,
+        { background: true, ...(environmentId ? { environmentId } : {}) }
+      );
+      if (response.success && response.data?.executionId) {
+        return { success: true, executionId: response.data.executionId };
+      }
+      const failure = response as FailureEnvelope;
+      return { success: false, error: failure.error?.message || "Failed to start the run" };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : "Failed to start the run" };
+    }
+  }, []);
+
+  const startDraftRun = React.useCallback(
+    async (projectId: string, steps: RecordedStep[], options?: { environmentId?: string; title?: string }) => {
+      try {
+        const response = await apiClient.post<{ executionId: string }>(`/api/projects/${projectId}/recorder`, {
+          action: "replay",
+          steps,
+          environmentId: options?.environmentId,
+          title: options?.title,
+        });
+        if (response.success && response.data?.executionId) {
+          return { success: true, executionId: response.data.executionId };
+        }
+        const failure = response as FailureEnvelope;
+        return { success: false, error: failure.error?.message || "Failed to start the run" };
+      } catch (err: unknown) {
+        return { success: false, error: err instanceof Error ? err.message : "Failed to start the run" };
+      }
+    },
+    []
+  );
+
+  const cancelExecution = React.useCallback(async (id: string) => {
+    try {
+      const response = await apiClient.post(`/api/executions/${id}/cancel`, {});
+      if (response.success) return { success: true };
+      const failure = response as FailureEnvelope;
+      return { success: false, error: failure.error?.message || "Failed to cancel the run" };
+    } catch (err: unknown) {
+      return { success: false, error: err instanceof Error ? err.message : "Failed to cancel the run" };
+    }
+  }, []);
+
   return (
     <ExecutionsContext.Provider
       value={{
@@ -179,6 +242,9 @@ export function ExecutionsProvider({ children }: { children: React.ReactNode }) 
         setSelectedExecution,
         fetchExecutions,
         fetchExecutionById,
+        startScenarioRun,
+        startDraftRun,
+        cancelExecution,
       }}
     >
       {children}

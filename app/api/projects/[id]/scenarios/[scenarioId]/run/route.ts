@@ -15,7 +15,8 @@ interface Params {
 
 /**
  * POST /api/projects/:id/scenarios/:scenarioId/run
- * Executes a single test scenario and records TestExecution in DB
+ * Starts a scenario run in the background and returns its snapshot (including `executionId`).
+ * Follow progress with GET /api/executions/:id/stream.
  */
 export const POST = rateLimitMiddleware(
   authMiddleware(
@@ -29,30 +30,19 @@ export const POST = rateLimitMiddleware(
         const params = await context?.params;
         const projectId = params?.id;
         const scenarioId = params?.scenarioId;
-
         if (!projectId || !scenarioId) {
           return ResponseService.badRequest("Missing project or scenario ID", request);
         }
 
-        let environmentId: string | undefined;
-        try {
-          const body = await request.clone().json().catch(() => ({}));
-          environmentId = body?.environmentId;
-        } catch {
-          // Fall back to query param
-        }
-
-        if (!environmentId) {
-          const url = new URL(request.url);
-          environmentId = url.searchParams.get("environmentId") || undefined;
-        }
+        const body = await request.json().catch(() => ({}));
+        const environmentId = typeof body?.environmentId === "string" ? body.environmentId : undefined;
 
         try {
-          const result = await ScenariosService.executeScenario(projectId, scenarioId, userId, environmentId);
-          return ResponseService.ok(result, HttpStatus.OK, request);
+          const snapshot = await ScenariosService.startScenarioRun(projectId, scenarioId, userId, environmentId);
+          return ResponseService.ok(snapshot, HttpStatus.OK, request);
         } catch (err: unknown) {
-          const errorMessage = err instanceof Error ? err.message : "Failed to run scenario";
-          return ResponseService.badRequest(errorMessage, request);
+          const message = err instanceof Error ? err.message : "Failed to run scenario";
+          return ResponseService.badRequest(message, request);
         }
       },
       { permissionKey: RbacPermission.EXECUTION_TRIGGER }

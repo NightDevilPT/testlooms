@@ -1,9 +1,12 @@
 import { chromium, BrowserContext, Page, Frame } from 'playwright';
-import type { SessionAuthConfig } from '@/lib/projects-service/crypto';
+import type { SessionAuthConfig } from '@/lib/projects-service/types';
 import {
   ActionLog,
   ClickedElementInfo,
   PlaywrightSession,
+  ScenarioRunHooks,
+  ScenarioRunOutcome,
+  StepExecutionOutcome,
   SupportedFramework,
   SupportedLanguage,
 } from './types';
@@ -1263,7 +1266,11 @@ export class PlaywrightService {
    * falling back to all other recorded locator strategies if the default selector fails.
    * Returns true if step succeeded, or false if element could not be found with any strategy.
    */
-  public static async executeStepWithSelfHealing(page: Page, step: ActionLog): Promise<boolean> {
+  public static async executeStepWithSelfHealing(
+    page: Page,
+    step: ActionLog,
+    outcome?: StepExecutionOutcome
+  ): Promise<boolean> {
     const meta = step.selectorMetadata || {};
     const defaultChoice = step.defaultSelector || meta.defaultSelector || 'css';
 
@@ -1303,7 +1310,12 @@ export class PlaywrightService {
     if (candidates.length === 0) return true; // Non-element action
 
     // Try candidates in priority order
-    for (const candidate of candidates) {
+    for (const [candidateIndex, candidate] of candidates.entries()) {
+      if (outcome) {
+        outcome.candidateIndex = candidateIndex;
+        outcome.selector = candidate.selector;
+        outcome.strategy = candidate.type;
+      }
       try {
         if (step.type === 'click') {
           await page.click(candidate.selector, { timeout: 1200 });
@@ -1321,6 +1333,14 @@ export class PlaywrightService {
         } else if (step.type === 'hover') {
           await page.hover(candidate.selector, { timeout: 1200 });
           return true;
+        } else if (step.type === 'check') {
+          await page.locator(candidate.selector).setChecked(step.value !== 'false', { timeout: 1200 });
+          return true;
+        } else if (step.type === 'upload_file') {
+          if (step.filePaths && step.filePaths.length > 0) {
+            await page.setInputFiles(candidate.selector, step.filePaths, { timeout: 1200 });
+            return true;
+          }
         } else if (step.type === 'assert_visible') {
           const isVis = await page.isVisible(candidate.selector).catch(() => false);
           if (isVis) return true;
@@ -1338,131 +1358,176 @@ export class PlaywrightService {
   }
 
   /**
-   * Replay all recorded action steps sequentially from start to finish
+   * Execute one step for a test run and report a precise outcome (PASSED / HEALED / FAILED).
    */
-  static async replaySession(
-    sessionId: string,
-    fallbackTargetUrl?: string,
-    customActionLogs?: ActionLog[],
-    sessionAuth?: SessionAuthConfig
-  ): Promise<PlaywrightSession> {
-    let session = sessions.get(sessionId);
-
-    // If browser session was closed or missing, recreate it using initialUrl or fallbackTargetUrl
-    if (!session || session.page.isClosed() || session.isClosed) {
-      const initialUrl = fallbackTargetUrl || session?.initialUrl || session?.currentUrl || 'https://example.com';
-      session = await this.getOrCreateSession(sessionId, initialUrl, undefined, sessionAuth);
-    }
-
-    const logsToReplay = (customActionLogs && customActionLogs.length > 0)
-      ? customActionLogs
-      : (session.actionLogs.length > 0 ? session.actionLogs : []);
-
-    if (logsToReplay.length === 0) {
-      if (session.currentUrl && session.currentUrl !== 'about:blank') {
-        await this.navigateSession(sessionId, session.currentUrl);
-      } else if (fallbackTargetUrl) {
-        await this.navigateSession(sessionId, fallbackTargetUrl);
-      }
-      return session;
-    }
-
-    // Restore logs on session if customActionLogs was provided
-    if (customActionLogs && customActionLogs.length > 0 && session.actionLogs.length === 0) {
-      session.actionLogs = [...customActionLogs];
-    }
-
-    // Snapshot recorded steps in chronological order (#1 to #N)
-    const recordedSteps = (customActionLogs && customActionLogs.length > 0)
-      ? [...customActionLogs]
-      : [...session.actionLogs].reverse();
-
-    // Determine initial target website URL
-    const initialNavigateStep = recordedSteps.find((s) => s.type === 'navigate' && s.value && s.value !== 'about:blank');
-    const targetUrl = initialNavigateStep?.value || initialNavigateStep?.url || session.initialUrl || (session.currentUrl && session.currentUrl !== 'about:blank' ? session.currentUrl : undefined) || fallbackTargetUrl || 'https://example.com';
-
-    session.isLoading = true;
-    session.isFastForwarding = true;
-    session.lastUpdated = Date.now();
+  private static async executeRunStep(
+    session: PlaywrightSession,
+    step: ActionLog
+  ): Promise<{ status: 'PASSED' | 'FAILED' | 'HEALED'; error?: string; healedSelector?: string; healedPriority?: string }> {
+    const page = this.getActivePage(session);
 
     try {
-      // 1. First navigate to target URL
-      await session.page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 20000 }).catch(() => {});
-      session.currentUrl = session.page.url();
+      switch (step.type) {
+        case 'navigate': {
+          const target = step.value || step.url;
+          if (target && target !== 'about:blank' && target !== page.url()) {
+            await page.goto(target, { waitUntil: 'domcontentloaded', timeout: 15000 });
+          }
+          return { status: 'PASSED' };
+        }
+
+        case 'scroll': {
+          const scrollPos = parseInt(step.value || '0', 10) || 0;
+          await page.evaluate((y) => window.scrollTo({ top: y, behavior: 'auto' }), scrollPos);
+          return { status: 'PASSED' };
+        }
+
+        case 'press_key':
+          if (step.key) await page.keyboard.press(step.key);
+          return { status: 'PASSED' };
+
+        case 'assert_url': {
+          const expected = step.value || step.url || step.expectedValue || '';
+          const actual = page.url();
+          if (expected && !actual.includes(expected)) {
+            return { status: 'FAILED', error: `Expected URL to contain "${expected}" but was "${actual}"` };
+          }
+          return { status: 'PASSED' };
+        }
+
+        default: {
+          const outcome: StepExecutionOutcome = { candidateIndex: 0 };
+          const ok = await this.executeStepWithSelfHealing(page, step, outcome);
+          if (!ok) {
+            const isAssertion = step.type === 'assert_visible' || step.type === 'assert_text';
+            return {
+              status: 'FAILED',
+              error: isAssertion
+                ? `Assertion failed: ${step.description}`
+                : `Could not locate the element for "${step.description}" using any recorded locator`,
+            };
+          }
+          if (outcome.candidateIndex > 0) {
+            return {
+              status: 'HEALED',
+              healedSelector: outcome.selector,
+              healedPriority: outcome.strategy,
+            };
+          }
+          return { status: 'PASSED' };
+        }
+      }
+    } catch (err: unknown) {
+      return { status: 'FAILED', error: err instanceof Error ? err.message.split('\n')[0] : 'Step execution failed' };
+    }
+  }
+
+  /**
+   * Run recorded steps for a test execution, reporting live progress through hooks.
+   * This stops at the first failing step, streams browser frames,
+   * honours cancellation between steps and always closes the browser when finished.
+   * Throws when the browser or the initial navigation fails (before any step ran).
+   */
+  static async runScenarioSteps(
+    sessionId: string,
+    baseUrl: string,
+    logs: ActionLog[],
+    sessionAuth: SessionAuthConfig | undefined,
+    hooks: ScenarioRunHooks
+  ): Promise<ScenarioRunOutcome> {
+    const session = await this.getOrCreateSession(sessionId, baseUrl, undefined, sessionAuth);
+    const outcome: ScenarioRunOutcome = { cancelled: false, failedIndex: null };
+
+    // Prevents browser interactions during the run from being recorded as new steps
+    session.isFastForwarding = true;
+
+    let capturing = false;
+    const captureFrame = async (): Promise<string | null> => {
+      if (capturing) return session.cachedFrame;
+      capturing = true;
+      try {
+        const frame = await this.updateFrameCache(session);
+        if (frame) hooks.onFrame?.(frame);
+        return frame;
+      } finally {
+        capturing = false;
+      }
+    };
+    const reportPage = () => {
+      try {
+        const page = this.getActivePage(session);
+        hooks.onPage?.(page.url(), session.pageTitle);
+      } catch {
+        // page already closed
+      }
+    };
+    const frameTimer = setInterval(() => {
+      void captureFrame();
+    }, 800);
+
+    try {
+      const firstNavigation = logs.find((l) => l.type === 'navigate' && (l.value || l.url) && (l.value || l.url) !== 'about:blank');
+      const startUrl = firstNavigation?.value || firstNavigation?.url || baseUrl;
+      await session.page.goto(startUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
       try {
         session.pageTitle = await session.page.title();
       } catch {
-        session.pageTitle = targetUrl;
+        session.pageTitle = startUrl;
       }
+      reportPage();
+      await captureFrame();
 
-      // 2. Step through each recorded action sequentially with 250ms delay
-      for (const step of recordedSteps) {
-        if (session.page.isClosed() || session.isClosed) break;
-
-        await new Promise((res) => setTimeout(res, 250));
-
-        switch (step.type) {
-          case 'navigate':
-            const navTarget = step.value || step.url;
-            if (navTarget && navTarget !== 'about:blank' && navTarget !== session.page.url()) {
-              await session.page.goto(navTarget, { waitUntil: 'domcontentloaded', timeout: 15000 }).catch(() => {});
-            }
-            break;
-
-          case 'scroll':
-            const scrollPos = parseInt(step.value || '0', 10) || 0;
-            await session.page.evaluate((y) => {
-              window.scrollTo({ top: y, behavior: 'auto' });
-            }, scrollPos).catch(() => {});
-            await new Promise((r) => setTimeout(r, 150));
-            break;
-
-          case 'press_key':
-            if (step.key) {
-              await session.page.keyboard.press(step.key).catch(() => {});
-            }
-            break;
-
-          default:
-            const success = await this.executeStepWithSelfHealing(session.page, step);
-            if (!success) {
-              logger.error(`Step [${step.description}] failed to locate target element. Continuing to next step.`, 'PlaywrightService');
-            }
-            break;
+      for (let index = 0; index < logs.length; index++) {
+        if (hooks.isCancelled()) {
+          outcome.cancelled = true;
+          break;
+        }
+        if (session.isClosed || this.getActivePage(session).isClosed()) {
+          throw new Error('The browser window closed unexpectedly during the run');
         }
 
-        session.currentUrl = session.page.url();
+        const step = logs[index];
+        hooks.onStepStart(index, step);
+        const startedAt = Date.now();
+
+        // Short pause so each step is visible in the live view
+        await new Promise((resolve) => setTimeout(resolve, 250));
+        const result = await this.executeRunStep(session, step);
+        const durationMs = Date.now() - startedAt;
+
         try {
-          session.pageTitle = await session.page.title();
+          session.pageTitle = await this.getActivePage(session).title();
         } catch {
-          // Ignore title error
+          // ignore title errors
         }
-        session.lastUpdated = Date.now();
+        const frame = await captureFrame();
+        reportPage();
+
+        hooks.onStepResult(index, {
+          status: result.status,
+          durationMs,
+          error: result.error,
+          healedSelector: result.healedSelector,
+          healedPriority: result.healedPriority,
+          screenshot: result.status === 'FAILED' ? frame : null,
+        });
+
+        if (result.status === 'FAILED') {
+          outcome.failedIndex = index;
+          break;
+        }
       }
 
-      // 3. Auto-close browser window cleanly after replay completes all steps
-      await new Promise((res) => setTimeout(res, 1000));
-      if (session && !session.isClosed && !session.page.isClosed()) {
-        session.isClosed = true;
-        session.pageTitle = 'Replay Completed & Closed';
-        session.lastUpdated = Date.now();
-        session.actionLogs.unshift({
-          id: Math.random().toString(36).substring(2, 9),
-          type: 'navigate',
-          description: 'Then replay finished and browser window was closed',
-          timestamp: new Date().toLocaleTimeString(),
-        });
-        await this.closeSession(sessionId);
-      }
-    } catch (err) {
-      logger.error(`Replay error for session ${sessionId}`, 'PlaywrightService', err);
+      // Hold the final frame briefly so the end state is visible before the browser closes
+      await new Promise((resolve) => setTimeout(resolve, 600));
+      await captureFrame();
     } finally {
+      clearInterval(frameTimer);
       session.isFastForwarding = false;
-      session.isLoading = false;
-      await this.updateFrameCache(session);
+      await this.closeSession(sessionId);
     }
 
-    return session;
+    return outcome;
   }
 
   /**

@@ -70,11 +70,6 @@ interface ScenariosContextType {
     scenarioId: string,
     stepId: string
   ) => Promise<{ success: boolean; error?: string }>;
-  runScenario: (
-    projectId: string,
-    scenarioId: string,
-    environmentId?: string
-  ) => Promise<{ success: boolean; data?: any; error?: string }>;
   reorderSteps: (
     projectId: string,
     scenarioId: string,
@@ -94,24 +89,6 @@ export function ScenariosProvider({ children }: { children: React.ReactNode }) {
   const [page, setPage] = React.useState<number>(1);
   const [totalPages, setTotalPages] = React.useState<number>(1);
   const [totalItems, setTotalItems] = React.useState<number>(0);
-
-  const runScenario = async (projectId: string, scenarioId: string, environmentId?: string) => {
-    try {
-      const response = await apiClient.post(
-        `/api/projects/${projectId}/scenarios/${scenarioId}/run`,
-        environmentId ? { environmentId } : {}
-      );
-      if (response.success && response.data) {
-        return { success: true, data: response.data };
-      } else {
-        const failure = response as FailureEnvelope;
-        return { success: false, error: failure.error?.message || "Failed to execute scenario" };
-      }
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : "Execution failed";
-      return { success: false, error: msg };
-    }
-  };
 
   const fetchAllScenarios = React.useCallback(
     async (params?: {
@@ -381,7 +358,6 @@ export function ScenariosProvider({ children }: { children: React.ReactNode }) {
         createScenario,
         updateScenario,
         deleteScenario,
-        runScenario,
         saveScenarioSteps,
         listSteps,
         updateStep,

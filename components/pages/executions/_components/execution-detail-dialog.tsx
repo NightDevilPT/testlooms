@@ -4,6 +4,7 @@ import * as React from "react";
 import { FormDialog } from "@/components/shared/form-dialog";
 import { TestExecutionItem, useExecutions } from "@/components/context/executions-context";
 import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   CheckCircle2,
   XCircle,
@@ -159,56 +160,58 @@ export function ExecutionDetailDialog({ execution, open, onOpenChange }: Executi
               No individual step logs recorded for this execution.
             </div>
           ) : (
-            <div className="space-y-2 max-h-[360px] overflow-y-auto pr-1">
-              {stepResults.map((stepRes) => (
-                <div
-                  key={stepRes.id}
-                  className="p-3 rounded-lg border border-border bg-card space-y-2 text-xs"
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-primary font-mono">
-                        Step #{stepRes.stepOrder}
-                      </span>
-                      <Badge variant={getActionBadgeVariant(stepRes.actionType)} className="uppercase font-semibold">
-                        {stepRes.actionType}
-                      </Badge>
-                      <span className="text-foreground font-medium">
-                        {stepRes.step?.description || stepRes.step?.primaryKey || `Action ${stepRes.actionType}`}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-2 shrink-0">
-                      {stepRes.durationMs && (
-                        <span className="text-[11px] font-mono text-muted-foreground">
-                          {stepRes.durationMs}ms
+            <ScrollArea className="h-[40vh]">
+              <div className="space-y-2 pr-3">
+                {stepResults.map((stepRes) => (
+                  <div
+                    key={stepRes.id}
+                    className="p-3 rounded-lg border border-border bg-card space-y-2 text-xs"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-primary font-mono">
+                          Step #{stepRes.stepOrder}
                         </span>
-                      )}
-                      {stepRes.status === "PASSED" ? (
-                        <Badge variant="success">Passed</Badge>
-                      ) : (
-                        <Badge variant="destructive">Failed</Badge>
-                      )}
+                        <Badge variant={getActionBadgeVariant(stepRes.actionType)} className="uppercase font-semibold">
+                          {stepRes.actionType}
+                        </Badge>
+                        <span className="text-foreground font-medium">
+                          {stepRes.step?.description || stepRes.step?.primaryKey || `Action ${stepRes.actionType}`}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        {stepRes.durationMs && (
+                          <span className="text-[11px] font-mono text-muted-foreground">
+                            {stepRes.durationMs}ms
+                          </span>
+                        )}
+                        {stepRes.status === "PASSED" ? (
+                          <Badge variant="success">Passed</Badge>
+                        ) : (
+                          <Badge variant="destructive">Failed</Badge>
+                        )}
+                      </div>
                     </div>
+
+                    {/* Healed Selector Note */}
+                    {stepRes.healedSelector && (
+                      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground bg-muted px-2 py-1 rounded border border-border font-mono">
+                        <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-primary" />
+                        Self-healed selector: {stepRes.healedSelector}
+                      </div>
+                    )}
+
+                    {/* Failure Reason */}
+                    {stepRes.failureReason && (
+                      <div className="p-2 rounded bg-destructive/10 text-destructive text-[11px] font-mono break-words">
+                        Reason: {stepRes.failureReason}
+                      </div>
+                    )}
                   </div>
-
-                  {/* Healed Selector Note */}
-                  {stepRes.healedSelector && (
-                    <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground bg-muted px-2 py-1 rounded border border-border font-mono">
-                      <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-primary" />
-                      Self-healed selector: {stepRes.healedSelector}
-                    </div>
-                  )}
-
-                  {/* Failure Reason */}
-                  {stepRes.failureReason && (
-                    <div className="p-2 rounded bg-destructive/10 text-destructive text-[11px] font-mono break-words">
-                      Reason: {stepRes.failureReason}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            </ScrollArea>
           )}
         </div>
       </div>

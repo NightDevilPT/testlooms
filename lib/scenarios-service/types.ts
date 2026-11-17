@@ -113,3 +113,72 @@ export interface TestScenarioWithSteps {
     baseUrl: string;
   };
 }
+
+// ---------------------------------------------------------------------------
+// Live scenario runs (progress tracker, streaming, cancel)
+// ---------------------------------------------------------------------------
+
+export type RunStatus = "PENDING" | "RUNNING" | "PASSED" | "FAILED" | "CANCELLED";
+
+export type RunStepStatus =
+  | "PENDING"
+  | "RUNNING"
+  | "PASSED"
+  | "FAILED"
+  | "HEALED"
+  | "SKIPPED";
+
+export interface RunStepState {
+  index: number;
+  stepId: string | null;
+  actionType: string;
+  description: string;
+  status: RunStepStatus;
+  durationMs: number | null;
+  error: string | null;
+  healedSelector: string | null;
+  healedPriority: string | null;
+  /** JPEG data URL captured when the step failed */
+  screenshot: string | null;
+}
+
+/** Full state of one scenario run, used for the live tracker and for finished runs. */
+export interface ExecutionRunSnapshot {
+  executionId: string;
+  projectId: string;
+  projectName: string;
+  scenarioId: string | null;
+  scenarioTitle: string;
+  status: RunStatus;
+  startedAt: string | null;
+  completedAt: string | null;
+  durationMs: number | null;
+  currentUrl: string;
+  pageTitle: string;
+  totalSteps: number;
+  passedSteps: number;
+  failedSteps: number;
+  healedSteps: number;
+  errorMessage: string | null;
+  steps: RunStepState[];
+  /** Latest browser frame (JPEG data URL), only available while the run is in memory */
+  frame: string | null;
+  /** True while the run is executing on this server */
+  isLive: boolean;
+}
+
+/** Counters and page info sent with every step event so the client never has to recompute them. */
+export interface RunProgressCounts {
+  passedSteps: number;
+  failedSteps: number;
+  healedSteps: number;
+  currentUrl: string;
+  pageTitle: string;
+}
+
+export type RunEvent =
+  | ({ type: "step"; index: number; step: RunStepState } & RunProgressCounts)
+  | { type: "frame"; frame: string }
+  | { type: "complete"; snapshot: ExecutionRunSnapshot };
+
+export type RunListener = (event: RunEvent) => void;

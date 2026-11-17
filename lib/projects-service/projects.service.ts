@@ -10,15 +10,86 @@ import {
 	EnvironmentProfileItem,
 	CreateEnvProfileInput,
 	UpdateEnvProfileInput,
-} from "./types";
-import {
-	encryptVariables,
-	decryptVariables,
-	buildEnvironmentRunContext,
 	EnvironmentRunContext,
-} from "./crypto";
+	EnvironmentVariableEntry,
+} from "./types";
+import { encryptVariables, decryptVariables } from "./crypto";
 
 export class ProjectsService {
+	/**
+	 * Split decrypted environment entries into plain {{env.KEY}} variables and browser session auth.
+	 * Header values are only ever sent to the project's own host(s), never to third parties such as
+	 * Google or analytics domains. The optional plain variable AUTH_ALLOWED_HOSTS (comma separated)
+	 * adds extra hosts, e.g. a separate API host.
+	 */
+	private static buildRunContext(
+		entries: EnvironmentVariableEntry[],
+		projectBaseUrl: string,
+	): EnvironmentRunContext {
+		const envVariables: Record<string, string> = {};
+		for (const entry of entries) {
+			if ((entry.type ?? "variable") === "variable" && entry.key) {
+				envVariables[entry.key] = entry.value;
+			}
+		}
+
+		const targetBaseUrl =
+			envVariables["BASE_URL"] || envVariables["baseUrl"] || projectBaseUrl;
+
+		const headers: Record<string, string> = {};
+		const cookies: { name: string; value: string }[] = [];
+		const localStorage: Record<string, string> = {};
+		for (const entry of entries) {
+			const type = entry.type ?? "variable";
+			const key = (entry.key || "").trim();
+			if (type === "variable" || !key) continue;
+
+			// Values may reference plain variables, e.g. "Bearer {{env.API_TOKEN}}"
+			const value = (entry.value ?? "").replace(
+				/\{\{(?:env\.|ENV\.|env:)?([A-Za-z0-9_]+)\}\}/g,
+				(match, name: string) =>
+					name in envVariables ? envVariables[name] : match,
+			);
+			if (type === "header") headers[key] = value;
+			else if (type === "cookie") cookies.push({ name: key, value });
+			else localStorage[key] = value;
+		}
+
+		if (
+			!Object.keys(headers).length &&
+			!cookies.length &&
+			!Object.keys(localStorage).length
+		) {
+			return { envVariables, targetBaseUrl };
+		}
+
+		let origin = "";
+		const allowedHosts = new Set<string>();
+		try {
+			const parsed = new URL(targetBaseUrl);
+			origin = parsed.origin;
+			allowedHosts.add(parsed.hostname.toLowerCase());
+		} catch {
+			// Invalid base URL: cookies and localStorage cannot be scoped and are skipped downstream
+		}
+		for (const host of (envVariables["AUTH_ALLOWED_HOSTS"] || "").split(",")) {
+			const clean = host.trim().toLowerCase();
+			if (clean) allowedHosts.add(clean);
+		}
+
+		return {
+			envVariables,
+			targetBaseUrl,
+			sessionAuth: {
+				origin,
+				allowedHosts: [...allowedHosts],
+				headers,
+				cookies,
+				localStorage,
+			},
+		};
+	}
+
 	/**
 	 * Resolve the environment profile used for a run (explicit id, else default, else oldest) and
 	 * turn it into plain {{env.KEY}} variables plus browser session auth (headers/cookies/localStorage).
@@ -55,7 +126,7 @@ export class ProjectsService {
 		}
 
 		try {
-			const context = buildEnvironmentRunContext(
+			const context = this.buildRunContext(
 				decryptVariables(profile.variables),
 				projectBaseUrl,
 			);

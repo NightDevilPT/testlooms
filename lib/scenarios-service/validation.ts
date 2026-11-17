@@ -105,3 +105,12 @@ export type TestStepInput = z.infer<typeof testStepSchema>;
 export type CreateStepsInput = z.infer<typeof createStepsSchema>;
 export type UpdateStepInput = z.infer<typeof updateStepSchema>;
 export type ReorderStepsInput = z.infer<typeof reorderStepsSchema>;
+
+/** Steps straight from the Studio editor, sent with the recorder "replay" action. */
+export const draftRunSchema = z.object({
+  title: z.string().max(120).optional(),
+  environmentId: z.string().uuid("Invalid environment ID").optional(),
+  steps: z.array(testStepSchema).min(1, "Add at least one step to run").max(500, "Too many steps to run at once"),
+});
+
+export type DraftRunInput = z.infer<typeof draftRunSchema>;
