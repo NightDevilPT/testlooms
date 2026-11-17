@@ -1,4 +1,5 @@
-import { chromium, Page, Frame } from 'playwright';
+import { chromium, BrowserContext, Page, Frame } from 'playwright';
+import type { SessionAuthConfig } from '@/lib/projects-service/crypto';
 import {
   ActionLog,
   ClickedElementInfo,
@@ -96,12 +97,70 @@ export class PlaywrightService {
   }
 
   /**
+   * Apply environment-defined session auth to a fresh browser context so tests start logged in:
+   *  - headers: added only to requests for the project's own host(s) (and their subdomains),
+   *    so tokens are never sent to third parties such as Google or analytics domains
+   *  - cookies: set for the project's origin
+   *  - localStorage: set on the project's origin before any page script runs
+   */
+  private static async applySessionAuth(
+    context: BrowserContext,
+    auth?: SessionAuthConfig
+  ): Promise<void> {
+    if (!auth) return;
+
+    const headerNames = Object.keys(auth.headers);
+    if (headerNames.length > 0 && auth.allowedHosts.length > 0) {
+      const allowed = auth.allowedHosts;
+      await context.route('**/*', async (route) => {
+        let host = '';
+        try {
+          host = new URL(route.request().url()).hostname.toLowerCase();
+        } catch {
+          // non-http(s) URL: leave untouched
+        }
+        const isOwnHost = allowed.some((h) => host === h || host.endsWith(`.${h}`));
+        if (!isOwnHost) {
+          await route.continue();
+          return;
+        }
+        await route.continue({ headers: { ...route.request().headers(), ...auth.headers } });
+      });
+    }
+
+    if (auth.origin && auth.cookies.length > 0) {
+      try {
+        await context.addCookies(
+          auth.cookies.map((c) => ({ name: c.name, value: c.value, url: auth.origin }))
+        );
+      } catch (err: unknown) {
+        logger.warn('Failed to apply environment cookies', 'PlaywrightService', err);
+      }
+    }
+
+    if (auth.origin && Object.keys(auth.localStorage).length > 0) {
+      await context.addInitScript(
+        ({ origin, items }: { origin: string; items: Record<string, string> }) => {
+          if (window.location.origin !== origin) return;
+          try {
+            for (const [k, v] of Object.entries(items)) window.localStorage.setItem(k, v);
+          } catch {
+            // storage unavailable (e.g. sandboxed frame)
+          }
+        },
+        { origin: auth.origin, items: auth.localStorage }
+      );
+    }
+  }
+
+  /**
    * Get or create a Playwright session with high-performance flags
    */
   static async getOrCreateSession(
     sessionId: string = 'default',
     initialUrl?: string,
-    viewportConfig?: { width?: number; height?: number }
+    viewportConfig?: { width?: number; height?: number },
+    sessionAuth?: SessionAuthConfig
   ): Promise<PlaywrightSession> {
     let session = sessions.get(sessionId);
 
@@ -154,6 +213,9 @@ export class PlaywrightService {
       userAgent:
         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 TestLoom/1.0',
     });
+
+    // Pre-authenticate the browser from environment headers / cookies / localStorage
+    await this.applySessionAuth(context, sessionAuth);
 
     // 1. Expose click handler across context BEFORE page creation
     await context.exposeFunction('__testloom_on_click__', (elementData: ClickedElementInfo) => {
@@ -1281,14 +1343,15 @@ export class PlaywrightService {
   static async replaySession(
     sessionId: string,
     fallbackTargetUrl?: string,
-    customActionLogs?: ActionLog[]
+    customActionLogs?: ActionLog[],
+    sessionAuth?: SessionAuthConfig
   ): Promise<PlaywrightSession> {
     let session = sessions.get(sessionId);
 
     // If browser session was closed or missing, recreate it using initialUrl or fallbackTargetUrl
     if (!session || session.page.isClosed() || session.isClosed) {
       const initialUrl = fallbackTargetUrl || session?.initialUrl || session?.currentUrl || 'https://example.com';
-      session = await this.getOrCreateSession(sessionId, initialUrl);
+      session = await this.getOrCreateSession(sessionId, initialUrl, undefined, sessionAuth);
     }
 
     const logsToReplay = (customActionLogs && customActionLogs.length > 0)
@@ -1408,14 +1471,15 @@ export class PlaywrightService {
   static async recordFromStep(
     sessionId: string,
     fallbackTargetUrl?: string,
-    customActionLogs?: ActionLog[]
+    customActionLogs?: ActionLog[],
+    sessionAuth?: SessionAuthConfig
   ): Promise<PlaywrightSession> {
     let session = sessions.get(sessionId);
 
     // If browser session was closed or missing, recreate it using initialUrl or fallbackTargetUrl
     if (!session || session.page.isClosed() || session.isClosed) {
       const initialUrl = fallbackTargetUrl || session?.initialUrl || session?.currentUrl || 'https://example.com';
-      session = await this.getOrCreateSession(sessionId, initialUrl);
+      session = await this.getOrCreateSession(sessionId, initialUrl, undefined, sessionAuth);
     }
 
     const logsToReplay = (customActionLogs && customActionLogs.length > 0)

@@ -82,7 +82,12 @@ interface EnvironmentProfileItem {
 	id: string;
 	name: string;
 	isDefault: boolean;
-	variables: Array<{ key: string; value: string; isSecret: boolean }>;
+	variables: Array<{
+		key: string;
+		value: string;
+		isSecret: boolean;
+		type?: string;
+	}>;
 }
 
 export function WorkspacePage({ projectId }: WorkspacePageProps) {
@@ -91,7 +96,9 @@ export function WorkspacePage({ projectId }: WorkspacePageProps) {
 	const scenarioId = searchParams?.get("scenarioId") || null;
 
 	const [project, setProject] = React.useState<ProjectData | null>(null);
-	const [envProfiles, setEnvProfiles] = React.useState<EnvironmentProfileItem[]>([]);
+	const [envProfiles, setEnvProfiles] = React.useState<
+		EnvironmentProfileItem[]
+	>([]);
 	const [selectedEnvId, setSelectedEnvId] = React.useState<string>("default");
 	const [loadedScenario, setLoadedScenario] =
 		React.useState<TestScenarioWithSteps | null>(null);
@@ -193,15 +200,19 @@ export function WorkspacePage({ projectId }: WorkspacePageProps) {
 
 					// Fetch project environment profiles
 					try {
-						const envRes = await apiClient.get<EnvironmentProfileItem[]>(
-							`/api/projects/${projectId}/env-profiles`,
-						);
+						const envRes = await apiClient.get<
+							EnvironmentProfileItem[]
+						>(`/api/projects/${projectId}/env-profiles`);
 						if (isMounted && envRes.data) {
 							const profiles = (Array.isArray(envRes.data)
 								? envRes.data
-								: [envRes.data]) as unknown as EnvironmentProfileItem[];
+								: [
+										envRes.data,
+									]) as unknown as EnvironmentProfileItem[];
 							setEnvProfiles(profiles);
-							const defaultEnv = profiles.find((e) => e.isDefault);
+							const defaultEnv = profiles.find(
+								(e) => e.isDefault,
+							);
 							if (defaultEnv) {
 								setSelectedEnvId(defaultEnv.id);
 							}
@@ -392,7 +403,8 @@ export function WorkspacePage({ projectId }: WorkspacePageProps) {
 		viewportHeight,
 	]);
 
-	const [isDiscardConfirmOpen, setIsDiscardConfirmOpen] = React.useState(false);
+	const [isDiscardConfirmOpen, setIsDiscardConfirmOpen] =
+		React.useState(false);
 
 	const proceedStartRecording = async (initialSteps: RecordedStep[]) => {
 		if (!project || isStartingRecording || isRecording) return;
@@ -411,6 +423,12 @@ export function WorkspacePage({ projectId }: WorkspacePageProps) {
 					action: "start",
 					sessionId,
 					url: targetUrl,
+					environmentId:
+						selectedEnvId !== "default"
+							? selectedEnvId
+							: envProfiles.find((e) => e.isDefault)?.id ||
+								envProfiles[0]?.id ||
+								undefined,
 					viewport: {
 						width: viewportWidth,
 						height: viewportHeight,
@@ -432,7 +450,11 @@ export function WorkspacePage({ projectId }: WorkspacePageProps) {
 		if (!project || isStartingRecording || isRecording) return;
 
 		// If user has unsaved draft steps and is starting a new recording from scratch (not inserting after a step), prompt confirmation dialog
-		if (steps.length > 0 && !loadedScenario && recordingInsertIndex === null) {
+		if (
+			steps.length > 0 &&
+			!loadedScenario &&
+			recordingInsertIndex === null
+		) {
 			setIsDiscardConfirmOpen(true);
 			return;
 		}
@@ -464,14 +486,18 @@ export function WorkspacePage({ projectId }: WorkspacePageProps) {
 
 	// Active variables resolved from currently selected environment
 	const activeEnvVariables = React.useMemo(() => {
+		// Header / cookie / localStorage entries are applied to the browser, not used as {{env.KEY}} tokens
+		const plainOnly = (vars: EnvironmentProfileItem["variables"]) =>
+			vars.filter((v) => !v.type || v.type === "variable");
 		if (selectedEnvId === "default") {
 			const def = envProfiles.find((e) => e.isDefault);
-			if (def) return def.variables;
-			if (envProfiles.length > 0) return envProfiles[0].variables;
+			if (def) return plainOnly(def.variables);
+			if (envProfiles.length > 0)
+				return plainOnly(envProfiles[0].variables);
 			return [];
 		}
 		const selected = envProfiles.find((e) => e.id === selectedEnvId);
-		return selected ? selected.variables : [];
+		return selected ? plainOnly(selected.variables) : [];
 	}, [selectedEnvId, envProfiles]);
 
 	// Replay Recorded Steps in Chromium Browser
@@ -590,7 +616,10 @@ export function WorkspacePage({ projectId }: WorkspacePageProps) {
 	};
 
 	// Step locator & description update
-	const handleUpdateStep = (indexToUpdate: number, updatedFields: Partial<RecordedStep>) => {
+	const handleUpdateStep = (
+		indexToUpdate: number,
+		updatedFields: Partial<RecordedStep>,
+	) => {
 		const updated = steps.map((step, idx) => {
 			if (idx === indexToUpdate) {
 				return {
@@ -816,8 +845,13 @@ export function WorkspacePage({ projectId }: WorkspacePageProps) {
 									Project Base
 								</SelectItem>
 								{envProfiles.map((env) => (
-									<SelectItem key={env.id} value={env.id} className="text-xs">
-										{env.name} {env.isDefault ? "(Default)" : ""}
+									<SelectItem
+										key={env.id}
+										value={env.id}
+										className="text-xs"
+									>
+										{env.name}{" "}
+										{env.isDefault ? "(Default)" : ""}
 									</SelectItem>
 								))}
 							</SelectContent>
@@ -830,8 +864,8 @@ export function WorkspacePage({ projectId }: WorkspacePageProps) {
 								variant="secondary"
 								className="text-[10px] gap-1 border-0"
 							>
-								<Database className="h-3 w-3 text-primary" /> Draft
-								Restored
+								<Database className="h-3 w-3 text-primary" />{" "}
+								Draft Restored
 							</Badge>
 							<Button
 								type="button"
@@ -1001,14 +1035,22 @@ export function WorkspacePage({ projectId }: WorkspacePageProps) {
 											onChange={(e) => {
 												const val = e.target.value;
 												if (val.startsWith("/")) {
-													const base = project?.baseUrl || "";
-													const full = base.endsWith("/") ? `${base}${val.substring(1)}` : `${base}${val}`;
+													const base =
+														project?.baseUrl || "";
+													const full = base.endsWith(
+														"/",
+													)
+														? `${base}${val.substring(1)}`
+														: `${base}${val}`;
 													setCurrentUrl(full);
 												} else {
 													setCurrentUrl(val);
 												}
 											}}
-											placeholder={project?.baseUrl || "http://localhost:3000"}
+											placeholder={
+												project?.baseUrl ||
+												"http://localhost:3000"
+											}
 											className="font-mono text-xs"
 											title="Target Base URL / Route (e.g. http://localhost:3000/auth/login or /dashboard)"
 										/>
@@ -1048,24 +1090,44 @@ export function WorkspacePage({ projectId }: WorkspacePageProps) {
 											value={`${viewportWidth}x${viewportHeight}`}
 											onValueChange={(val) => {
 												if (!val) return;
-												const [w, h] = val.split("x").map(Number);
+												const [w, h] = val
+													.split("x")
+													.map(Number);
 												if (w && h) {
 													setViewportWidth(w);
 													setViewportHeight(h);
 												}
 											}}
 										>
-											<SelectTrigger size="sm" className="w-full h-8 text-xs font-mono font-medium bg-background">
+											<SelectTrigger
+												size="sm"
+												className="w-full h-8 text-xs font-mono font-medium bg-background"
+											>
 												<SelectValue placeholder="Select Screen Size" />
 											</SelectTrigger>
 											<SelectContent>
-												<SelectItem value="1920x1080">1920 × 1080 (Full HD)</SelectItem>
-												<SelectItem value="1280x800">1280 × 800 (Laptop)</SelectItem>
-												<SelectItem value="1440x900">1440 × 900 (MacBook Pro)</SelectItem>
-												<SelectItem value="1536x864">1536 × 864 (Standard Desktop)</SelectItem>
-												<SelectItem value="1366x768">1366 × 768 (HD Laptop)</SelectItem>
-												<SelectItem value="768x1024">768 × 1024 (Tablet)</SelectItem>
-												<SelectItem value="375x812">375 × 812 (Mobile)</SelectItem>
+												<SelectItem value="1920x1080">
+													1920 × 1080 (Full HD)
+												</SelectItem>
+												<SelectItem value="1280x800">
+													1280 × 800 (Laptop)
+												</SelectItem>
+												<SelectItem value="1440x900">
+													1440 × 900 (MacBook Pro)
+												</SelectItem>
+												<SelectItem value="1536x864">
+													1536 × 864 (Standard
+													Desktop)
+												</SelectItem>
+												<SelectItem value="1366x768">
+													1366 × 768 (HD Laptop)
+												</SelectItem>
+												<SelectItem value="768x1024">
+													768 × 1024 (Tablet)
+												</SelectItem>
+												<SelectItem value="375x812">
+													375 × 812 (Mobile)
+												</SelectItem>
 											</SelectContent>
 										</Select>
 									</div>
@@ -1312,7 +1374,9 @@ export function WorkspacePage({ projectId }: WorkspacePageProps) {
 											onUpdateStep={(updated) =>
 												handleUpdateStep(idx, updated)
 											}
-											availableEnvVariables={activeEnvVariables}
+											availableEnvVariables={
+												activeEnvVariables
+											}
 										/>
 									))}
 								</div>
